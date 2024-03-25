@@ -18,5 +18,8 @@ type Page struct{
 }
 
 func (ps *Page) NewPage(){
-
+	for i := range ps.pageData{
+		ps.pageData[i]=0
+	}
+	ps.pageData[0] = 1
 }
