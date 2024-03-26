@@ -1,25 +1,24 @@
-package dstrutsgo
+package utils
 
 import (
 	"errors"
 	"sync"
 )
 
-type set[T string | int | float64] struct{
+type set[T string | int | float64] struct {
 	data *(map[T]bool)
 	smux *sync.Mutex
 }
 
-
 type ISet[T string | int | float64] interface {
-	Add(ele T) 
-	Delete(ele T) 
+	Add(ele T)
+	Delete(ele T)
 	Contains(ele T) (cont bool)
 	GetSize() int
-	GetAvailableElement() (ele T,err error)
+	GetAvailableElement() (ele T, err error)
 }
 
-func GetNewSet[T string | int | float64] () ISet[T] {
+func GetNewSet[T string | int | float64]() ISet[T] {
 	newMap := make(map[T]bool)
 	return &set[T]{
 		data: &newMap,
@@ -50,12 +49,12 @@ func (s *set[T]) GetSize() int {
 	return len(*s.data)
 }
 
-func (s *set[T]) GetAvailableElement() (ele T,err error){
+func (s *set[T]) GetAvailableElement() (ele T, err error) {
 	if s.GetSize() == 0 {
 		return ele, errors.New("set is empty")
 	}
 	for key := range *s.data {
 		return key, nil
-	} 
+	}
 	return ele, errors.New("set is empty")
 }

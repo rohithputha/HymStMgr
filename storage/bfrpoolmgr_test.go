@@ -107,7 +107,7 @@ func TestNewPageMultiple(test *testing.T) {
 
 	bfrPool.NewPage()
 	newPage, _ := bfrPool.NewPage()
-	if newPage.pageData[0] != 1 || bfrPool.diskMgr.GetTotalNumPages() != 2 {
+	if newPage.pageData[0] != 1 || bfrPool.diskMgr.GetPageCount() != 2 {
 		test.Errorf("new page multiple creation not working as expected")
 	}
 }
@@ -124,7 +124,7 @@ func TestFlushPageByIndex(test *testing.T) {
 	}
 	bfrPool.pagePool[0].IsDirty = true
 	flushErr := bfrPool.flushPageByIndex(0)
-	if flushErr != nil || bfrPool.diskMgr.GetTotalNumPages() != 1 {
+	if flushErr != nil || bfrPool.diskMgr.GetPageCount() != 1 {
 		test.Errorf("flush page by index is not working as expected")
 	}
 
@@ -141,7 +141,7 @@ func TestFlushPageByIndexPageNotDirty(test *testing.T) {
 	}
 	bfrPool.pagePool[0].IsDirty = false
 	flushErr := bfrPool.flushPageByIndex(0)
-	if flushErr != nil || bfrPool.diskMgr.GetTotalNumPages() != 0 {
+	if flushErr != nil || bfrPool.diskMgr.GetPageCount() != 0 {
 		test.Errorf("flush page by index is not working as expected")
 	}
 
@@ -159,38 +159,34 @@ func TestFlushPage(test *testing.T) {
 	}
 	bfrPool.pagePool[bfrPool.pageMap[1]].IsDirty = true
 	flushErr := bfrPool.FlushPage(1)
-	if flushErr != nil || bfrPool.diskMgr.GetTotalNumPages() != 1 {
+	if flushErr != nil || bfrPool.diskMgr.GetPageCount() != 1 {
 		test.Errorf("flush page by page id is not working as expected")
 	}
 }
 
-func TestFetchPage(test *testing.T){
+func TestFetchPage(test *testing.T) {
 	bfrPool := InitBuffPoolMgr(diskmgr.DiskFileInit{
 		DbFilePath:  test.TempDir() + "dbtest.db",
 		LogFilePath: test.TempDir() + "dblog.log",
 	})
 
-	newPage, _:=bfrPool.NewPage()
-	fetchedPage, fetchErr :=bfrPool.FetchPage(0)
-	if fetchErr!=nil || newPage!=fetchedPage{
+	newPage, _ := bfrPool.NewPage()
+	fetchedPage, fetchErr := bfrPool.FetchPage(0)
+	if fetchErr != nil || newPage != fetchedPage {
 		test.Errorf("fetch page already in buffer not working as expected")
 	}
 }
 
-
-func TestFetchPageNotInBuffer(test *testing.T){
+func TestFetchPageNotInBuffer(test *testing.T) {
 	bfrPool := InitBuffPoolMgr(diskmgr.DiskFileInit{
 		DbFilePath:  test.TempDir() + "dbtest.db",
 		LogFilePath: test.TempDir() + "dblog.log",
 	})
 
 	bfrPool.NewPage()
-	delete(bfrPool.pageMap,0)
-	fetchedPage, fetchErr :=bfrPool.FetchPage(0)
-	if fetchErr!=nil || fetchedPage.pageData[0]!=1{
+	delete(bfrPool.pageMap, 0)
+	fetchedPage, fetchErr := bfrPool.FetchPage(0)
+	if fetchErr != nil || fetchedPage.pageData[0] != 1 {
 		test.Errorf("fetch page already in buffer not working as expected")
 	}
 }
-
-
-

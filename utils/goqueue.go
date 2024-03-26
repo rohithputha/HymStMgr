@@ -1,4 +1,4 @@
-package dstrutsgo
+package utils
 
 import (
 	"errors"
@@ -6,46 +6,45 @@ import (
 	"sync"
 )
 
-
-type Queue[T any] struct{
-	data *[]T
-	head int
-	tail int
+type Queue[T any] struct {
+	data     *[]T
+	head     int
+	tail     int
 	maxqsize int
-	qmux *sync.Mutex
+	qmux     *sync.Mutex
 }
 
-type IQueue[T any] interface{
+type IQueue[T any] interface {
 	Push(ele T) (err error)
 	ForcePush(ele T)
-	Pop()(ele T,err error) 
+	Pop() (ele T, err error)
 	Get(i int) (ele T, err error)
 	GetFirst() (ele T, err error)
 	GetLast() (ele T, err error)
-	Update(i int, ele T)(err error)
-	GetSize()(size int)
+	Update(i int, ele T) (err error)
+	GetSize() (size int)
 }
 
-func GetNewQueue[T any](maxsize int) IQueue[T]{
+func GetNewQueue[T any](maxsize int) IQueue[T] {
 	d := make([]T, 0, maxsize)
-	q :=  Queue[T]{
-		data: &d,
-		head: 0, 
-		tail: -1, 
+	q := Queue[T]{
+		data:     &d,
+		head:     0,
+		tail:     -1,
 		maxqsize: maxsize,
-		qmux: &sync.Mutex{},
+		qmux:     &sync.Mutex{},
 	}
 	return &q
 }
 
-func (q *Queue[T]) Push(ele T)(err error){
+func (q *Queue[T]) Push(ele T) (err error) {
 	q.qmux.Lock()
 	defer q.qmux.Unlock()
-	if len(*q.data)>=q.maxqsize {
-		if q.tail - q.head + 1 >= q.maxqsize  {
+	if len(*q.data) >= q.maxqsize {
+		if q.tail-q.head+1 >= q.maxqsize {
 			return errors.New("queue is full")
 		}
-		if q.head!=0 {
+		if q.head != 0 {
 			q.collapse()
 
 		}
@@ -55,12 +54,12 @@ func (q *Queue[T]) Push(ele T)(err error){
 	return nil
 }
 
-func (q *Queue[T]) ForcePush(ele T){
+func (q *Queue[T]) ForcePush(ele T) {
 	q.qmux.Lock()
 	defer q.qmux.Unlock()
 
-	if len(*q.data)>=q.maxqsize{
-		if (q.tail-q.head+1 >= q.maxqsize) {
+	if len(*q.data) >= q.maxqsize {
+		if q.tail-q.head+1 >= q.maxqsize {
 			q.head++
 		}
 		q.collapse()
@@ -69,29 +68,29 @@ func (q *Queue[T]) ForcePush(ele T){
 	q.tail++
 }
 
-func (q *Queue[T]) Pop() (ele T, err error){
+func (q *Queue[T]) Pop() (ele T, err error) {
 	q.qmux.Lock()
 	defer q.qmux.Unlock()
-	if q.head > q.tail{
+	if q.head > q.tail {
 		var e T
 		return e, errors.New("queue is empty")
 	}
-	val:= (*q.data)[q.head]
+	val := (*q.data)[q.head]
 	q.head++
 	return val, nil
 }
-func (q *Queue[T]) Get(i int) (ele T, err error ){
+func (q *Queue[T]) Get(i int) (ele T, err error) {
 	q.qmux.Lock()
 	defer q.qmux.Unlock()
 
-	if q.head+i>q.tail {
+	if q.head+i > q.tail {
 		var e T
 		return e, errors.New("index is beyond the queue size")
 	}
-	return (*q.data)[q.head+i], nil 
+	return (*q.data)[q.head+i], nil
 }
 
-func (q *Queue[T]) GetFirst()(ele T, err error){
+func (q *Queue[T]) GetFirst() (ele T, err error) {
 	q.qmux.Lock()
 	defer q.qmux.Unlock()
 
@@ -99,10 +98,10 @@ func (q *Queue[T]) GetFirst()(ele T, err error){
 		var e T
 		return e, errors.New("queue is empty")
 	}
-	return (*q.data)[q.head], nil	
+	return (*q.data)[q.head], nil
 }
 
-func (q *Queue[T]) GetLast()(ele T, err error){
+func (q *Queue[T]) GetLast() (ele T, err error) {
 	q.qmux.Lock()
 	defer q.qmux.Unlock()
 
@@ -113,11 +112,11 @@ func (q *Queue[T]) GetLast()(ele T, err error){
 	return (*q.data)[q.tail], nil
 }
 
-func (q *Queue[T]) Update(i int, ele T)(err error){
+func (q *Queue[T]) Update(i int, ele T) (err error) {
 	q.qmux.Lock()
 	defer q.qmux.Unlock()
 
-	if q.head+i>q.tail {
+	if q.head+i > q.tail {
 		return errors.New("index is not beyond the queue size")
 	}
 
@@ -128,7 +127,7 @@ func (q *Queue[T]) getSize() int {
 	if q.head > q.tail { //redundant condition but still kept for safety
 		return 0
 	}
-	return q.tail-q.head+1
+	return q.tail - q.head + 1
 }
 
 func (q *Queue[T]) GetSize() int {
@@ -139,13 +138,13 @@ func (q *Queue[T]) GetSize() int {
 }
 
 func (q *Queue[T]) collapse() {
-	newData := make([]T,q.getSize(),q.maxqsize)
+	newData := make([]T, q.getSize(), q.maxqsize)
 
-	if q.getSize() > 0{
+	if q.getSize() > 0 {
 		copy(newData, (*q.data)[q.head:q.tail+1])
 	}
-	
+
 	q.data = &newData
 	q.head = 0
-	q.tail = len(newData)-1
+	q.tail = len(newData) - 1
 }

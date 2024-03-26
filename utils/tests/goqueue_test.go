@@ -1,21 +1,21 @@
-package dstrutsgo
+package utils
 
 import (
 	"errors"
 	"testing"
 
-	"github.com/rohithputha/hymStMgr/dstrutsgo"
+	"github.com/rohithputha/hymStMgr/utils"
 )
 
 func TestGetNewQueue(test *testing.T){
-	queue := dstrutsgo.GetNewQueue[int](10)
+	queue := utils.GetNewQueue[int](10)
 	if queue.GetSize()!=0 {
 		test.Errorf("queue not formed error")
 	}
 }
 
 func TestPush(test *testing.T){
-	queue:= dstrutsgo.GetNewQueue[int](1)
+	queue:= utils.GetNewQueue[int](1)
 	queue.Push(1)
 	if queue.GetSize() !=1 {
 		test.Errorf("queue size not same as expected")
@@ -23,7 +23,7 @@ func TestPush(test *testing.T){
 }
 
 func TestPushFullQueue(test *testing.T){
-	queue:= dstrutsgo.GetNewQueue[int](1)
+	queue:= utils.GetNewQueue[int](1)
 	queue.Push(1)
 	
 	if err := queue.Push(2); err==nil || err.Error() != errors.New("queue is full").Error() {
@@ -32,7 +32,7 @@ func TestPushFullQueue(test *testing.T){
 }
 
 func TestPushPushPopCombiniation(test *testing.T){
-	queue:= dstrutsgo.GetNewQueue[int](2);
+	queue:= utils.GetNewQueue[int](2);
 	queue.Push(1)
 	queue.Push(2)
 	queue.Push(3)
@@ -49,7 +49,7 @@ func TestPushPushPopCombiniation(test *testing.T){
 }
 
 func TestPop(test *testing.T){
-	queue:= dstrutsgo.GetNewQueue[int](1)
+	queue:= utils.GetNewQueue[int](1)
 	ele :=1
 	queue.Push(ele)
 	acEle,_ := queue.Pop()
@@ -60,7 +60,7 @@ func TestPop(test *testing.T){
 }
 
 func TestPopEmptyQueue(test *testing.T){
-	queue:= dstrutsgo.GetNewQueue[int](1)
+	queue:= utils.GetNewQueue[int](1)
 	_, err := queue.Pop()
 	if err == nil || err.Error() != errors.New("queue is empty").Error(){
 		test.Errorf("queue empty error not thrown")
@@ -69,7 +69,7 @@ func TestPopEmptyQueue(test *testing.T){
 
 
 func TestGet(test *testing.T){
-	queue := dstrutsgo.GetNewQueue[int](3)
+	queue := utils.GetNewQueue[int](3)
 	queue.Push(1)
 	queue.Push(2)
 	queue.Push(3)
@@ -80,7 +80,7 @@ func TestGet(test *testing.T){
 }
 
 func TestGetOutOfBounds(test *testing.T){
-	queue := dstrutsgo.GetNewQueue[int](3)
+	queue := utils.GetNewQueue[int](3)
 	queue.Push(1)
 	queue.Push(2)
 	queue.Push(3)
@@ -90,7 +90,7 @@ func TestGetOutOfBounds(test *testing.T){
 }
 
 func TestGetFirst(test *testing.T){
-	queue:= dstrutsgo.GetNewQueue[int](2)
+	queue:= utils.GetNewQueue[int](2)
 	queue.Push(1)
 	queue.Push(2)
 	if ele, err := queue.GetFirst(); err != nil || ele !=1{
@@ -99,14 +99,14 @@ func TestGetFirst(test *testing.T){
 }
 
 func TestGetFirstEmptyQueue(test *testing.T){
-	queue:= dstrutsgo.GetNewQueue[int](2)
+	queue:= utils.GetNewQueue[int](2)
 	if _, err := queue.GetFirst(); err == nil || err.Error() != errors.New("queue is empty").Error(){
 		test.Errorf("get first not working as expected")
 	} 
 }
 
 func TestGetLast(test *testing.T){
-	queue:= dstrutsgo.GetNewQueue[int](2)
+	queue:= utils.GetNewQueue[int](2)
 	queue.Push(1)
 	queue.Push(2)
 	if ele, err := queue.GetLast(); err != nil || ele !=2{
@@ -115,14 +115,14 @@ func TestGetLast(test *testing.T){
 }
 
 func TestGetLastEmptyQueue(test *testing.T){
-	queue:= dstrutsgo.GetNewQueue[int](2)
+	queue:= utils.GetNewQueue[int](2)
 	if _, err := queue.GetLast(); err == nil || err.Error() != errors.New("queue is empty").Error(){
 		test.Errorf("get first not working as expected")
 	} 
 }
 
 func TestGetSize(test *testing.T){
-	queue:= dstrutsgo.GetNewQueue[int](1)
+	queue:= utils.GetNewQueue[int](1)
 	queue.Push(1)
 	queue.Push(2)
 	if queue.GetSize() != 1{
@@ -131,7 +131,7 @@ func TestGetSize(test *testing.T){
 }
 
 func TestForcePush(test *testing.T){
-	queue:= dstrutsgo.GetNewQueue[int](1)
+	queue:= utils.GetNewQueue[int](1)
 	queue.ForcePush(1)
 	if queue.GetSize()!=1{
 		test.Errorf("force push not working as expected")

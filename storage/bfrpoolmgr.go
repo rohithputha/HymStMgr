@@ -8,7 +8,7 @@ import (
 
 	"github.com/rohithputha/hymStMgr/constants"
 	"github.com/rohithputha/hymStMgr/diskmgr"
-	"github.com/rohithputha/hymStMgr/dstrutsgo"
+	"github.com/rohithputha/hymStMgr/utils"
 )
 
 type buffPoolStats struct {
@@ -19,34 +19,34 @@ type buffPoolStats struct {
 
 type BuffPoolMgrStr struct {
 	*buffPoolStats
-	replPol ReplPol
+	replPol  ReplPol
 	pagePool []Page
 	pageMap  map[int]int //mapping from pageId to pagePool index
-	freeSet  dstrutsgo.ISet[int]
-	pinSet   dstrutsgo.ISet[int]
+	freeSet  utils.ISet[int]
+	pinSet   utils.ISet[int]
 	pagesMem int
 	bpsMux   *sync.Mutex
-	diskMgr  diskmgr.DiskFile
+	diskMgr  diskmgr.DiskFileMgr
 }
 
 func InitBuffPoolMgr(dikFileInit diskmgr.DiskFileInit) (BuffPoolMgr *BuffPoolMgrStr) {
 	buffPool := BuffPoolMgrStr{
 		pagePool: make([]Page, constants.BufferPoolSize), // Size and capacity both set to BufferPoolSize
 		pageMap:  make(map[int]int),
-		freeSet:  dstrutsgo.GetNewSet[int](), // seems not required
+		freeSet:  utils.GetNewSet[int](), // seems not required
 		pagesMem: 0,
-		bpsMux:  &sync.Mutex{},
-		replPol: getLrukReplPol(),
-		pinSet:  dstrutsgo.GetNewSet[int](),
-		diskMgr: diskmgr.GetDiskFileMgr(dikFileInit),
+		bpsMux:   &sync.Mutex{},
+		replPol:  getLrukReplPol(),
+		pinSet:   utils.GetNewSet[int](),
+		diskMgr:  diskmgr.GetDiskFileMgr(dikFileInit),
 	}
- 
-	for i := range constants.BufferPoolSize{
-		buffPool.pagePool[i].pageMux  = &sync.Mutex{}
+
+	for i := range constants.BufferPoolSize {
+		buffPool.pagePool[i].pageMux = &sync.Mutex{}
 		buffPool.freeSet.Add(i)
 		buffPool.replPol.initPageLruk(i)
 	}
-	
+
 	return &buffPool
 }
 
@@ -66,13 +66,13 @@ func (bp *BuffPoolMgrStr) FetchPage(pageId int) (page *Page, readErr error) {
 		// maybe have a select page from buffer method that does interactions with the LRU struct (Repl policy)
 		defer bp.bpsMux.Unlock()
 		bp.replPol.addPageTime(i, time.Now().UnixNano())
-		page:=&bp.pagePool[i]
+		page := &bp.pagePool[i]
 		return page, nil
 	}
 	// bp.diskReadHit++
 	sPage, sPageIndex, sErr := bp.selectPage()
 	bp.pageMap[pageId] = sPageIndex
-	sPage.PageId = pageId 
+	sPage.PageId = pageId
 	bp.bpsMux.Unlock()
 	sPage.pageMux.Lock()
 	if sErr != nil {
@@ -96,14 +96,14 @@ on successful flush, isDirty should be marked as false
 
 func (bp *BuffPoolMgrStr) flushPageByIndex(pageIndex int) (flushErr error) {
 	if bp.pagePool[pageIndex].Pin == 0 && !bp.pagePool[pageIndex].IsCorrupted {
-		if bp.pagePool[pageIndex].IsDirty{
+		if bp.pagePool[pageIndex].IsDirty {
 			writerErr := bp.diskMgr.WritePage(pageIndex, bp.pagePool[pageIndex].pageData[:])
 			bp.pagePool[pageIndex].IsDirty = false
 			return writerErr
-		} else{
+		} else {
 			return nil
 		}
-		
+
 	} else {
 		return errors.New("page does not satisfy flush conditions")
 	}
@@ -139,7 +139,7 @@ On successful delete, isOccupied is marked as false and the page is added freese
 // }
 
 func (bp *BuffPoolMgrStr) allocatePageId() (pageId int) {
-	return bp.diskMgr.GetTotalNumPages()
+	return bp.diskMgr.GetPageCount()
 }
 
 func (bp *BuffPoolMgrStr) NewPage() (page *Page, newPageErr error) {
@@ -151,13 +151,13 @@ func (bp *BuffPoolMgrStr) NewPage() (page *Page, newPageErr error) {
 	if sErr != nil {
 		return nil, sErr
 	}
-	sPage.NewPage()	
+	sPage.NewPage()
 	writeErr := bp.diskMgr.WritePage(newPageId, sPage.pageData[:])
 	if writeErr != nil {
 		return nil, writeErr
 	}
 	bp.pageMap[newPageId] = sPageIndex
-	sPage.PageId = newPageId 
+	sPage.PageId = newPageId
 	return sPage, nil
 }
 
@@ -201,18 +201,17 @@ func (bp *BuffPoolMgrStr) selectPage() (page *Page, freePageIndex int, selectErr
 	// if freePageErr == nil {
 	// 	return &bp.pagePool[freePageIndex], freePageIndex, nil
 	// } else {
-		victimePageIndex := bp.replPol.findReplPage(time.Now().UnixNano()/ int64(time.Millisecond), bp.pinSet)
-		if victimePageIndex <0 || victimePageIndex >=constants.BufferPoolSize{
-			return nil, -1, errors.New("no victim page found by the repl pol")
-		}
-		flushErr := bp.flushPageByIndex(victimePageIndex) // flush page method for pageIndex
-		if flushErr != nil {
-			return nil, -1, errors.New("no page is free on memory")
-		}
-		delete(bp.pageMap,bp.pagePool[victimePageIndex].PageId)
-		// we should have the logic of page map allocation in the and page Id allocation in the page here....?
-        
-		return &bp.pagePool[victimePageIndex], victimePageIndex, nil
+	victimePageIndex := bp.replPol.findReplPage(time.Now().UnixNano()/int64(time.Millisecond), bp.pinSet)
+	if victimePageIndex < 0 || victimePageIndex >= constants.BufferPoolSize {
+		return nil, -1, errors.New("no victim page found by the repl pol")
+	}
+	flushErr := bp.flushPageByIndex(victimePageIndex) // flush page method for pageIndex
+	if flushErr != nil {
+		return nil, -1, errors.New("no page is free on memory")
+	}
+	delete(bp.pageMap, bp.pagePool[victimePageIndex].PageId)
+	// we should have the logic of page map allocation in the and page Id allocation in the page here....?
+
+	return &bp.pagePool[victimePageIndex], victimePageIndex, nil
 	// }
 }
-
