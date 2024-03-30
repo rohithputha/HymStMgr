@@ -88,11 +88,6 @@ func (bp *BuffPoolMgrStr) FetchPage(pageId int) (page *Page, readErr error) {
 	return sPage, nil
 }
 
-/*
-FlushPage should take a pageId as input and then flush the page to the disk
-if the page is pinned and is corrupted the flush will fail
-on successful flush, isDirty should be marked as false
-*/
 
 func (bp *BuffPoolMgrStr) flushPageByIndex(pageIndex int) (flushErr error) {
 	if bp.pagePool[pageIndex].Pin == 0 && !bp.pagePool[pageIndex].IsCorrupted {
@@ -109,6 +104,11 @@ func (bp *BuffPoolMgrStr) flushPageByIndex(pageIndex int) (flushErr error) {
 	}
 }
 
+/*
+FlushPage should take a pageId as input and then flush the page to the disk
+if the page is pinned and is corrupted the flush will fail
+on successful flush, isDirty should be marked as false
+*/
 func (bp *BuffPoolMgrStr) FlushPage(pageId int) (flushErr error) {
 	bp.bpsMux.Lock()
 	defer bp.bpsMux.Unlock()
@@ -120,23 +120,6 @@ func (bp *BuffPoolMgrStr) FlushPage(pageId int) (flushErr error) {
 	}
 }
 
-/*
-DeletePage should free up the page and mark it as a free page.
-If the page isPinned, the delete should fail
-On successful delete, isOccupied is marked as false and the page is added freeset.
-*/
-// func (bp *BuffPoolMgrStr) DeletePage(pageId int) (deleteErr error) {
-// 	bp.bpsMux.Lock()
-// 	defer bp.bpsMux.Unlock()
-
-// 	if i, ok := bp.pageMap[pageId]; ok && bp.pagePool[i].Pin == 0 && bp.pagePool[i].IsOccupied {
-// 		bp.pagePool[i].IsOccupied = false
-// 		bp.freeSet.Add(i)
-// 	} else {
-// 		return errors.New("delete page failed for pageId: " + fmt.Sprintf("%d", pageId))
-// 	}
-// 	return nil
-// }
 
 func (bp *BuffPoolMgrStr) allocatePageId() (pageId int) {
 	return bp.diskMgr.GetPageCount()
@@ -151,6 +134,7 @@ func (bp *BuffPoolMgrStr) NewPage() (page *Page, newPageErr error) {
 	if sErr != nil {
 		return nil, sErr
 	}
+	bp.replPol.initPageLruk(sPageIndex)
 	sPage.NewPage()
 	writeErr := bp.diskMgr.WritePage(newPageId, sPage.pageData[:])
 	if writeErr != nil {
@@ -187,20 +171,11 @@ func (bp *BuffPoolMgrStr) PinPage(pageId int) {
 }
 
 /*
-SelectPage has to return a free page
-either select a page from the free set
-or evict a page using the replacement policy and return that as a free page. eviction should involve not pinned pages and flushed pages. If not flushed, it should be flushed first.
-*/
-
-/*
 select page is responsible for selecting a page from pagePool and returnign the pointer to the page and pageIndex, err if any
 select page is NOT responsible for adding any info the page map and any other changes to the times info in lruk
 */
 func (bp *BuffPoolMgrStr) selectPage() (page *Page, freePageIndex int, selectErr error) {
-	// freePageIndex, freePageErr := bp.freeSet.GetAvailableElement()
-	// if freePageErr == nil {
-	// 	return &bp.pagePool[freePageIndex], freePageIndex, nil
-	// } else {
+
 	victimePageIndex := bp.replPol.findReplPage(time.Now().UnixNano()/int64(time.Millisecond), bp.pinSet)
 	if victimePageIndex < 0 || victimePageIndex >= constants.BufferPoolSize {
 		return nil, -1, errors.New("no victim page found by the repl pol")
@@ -211,7 +186,5 @@ func (bp *BuffPoolMgrStr) selectPage() (page *Page, freePageIndex int, selectErr
 	}
 	delete(bp.pageMap, bp.pagePool[victimePageIndex].PageId)
 	// we should have the logic of page map allocation in the and page Id allocation in the page here....?
-
 	return &bp.pagePool[victimePageIndex], victimePageIndex, nil
-	// }
 }
