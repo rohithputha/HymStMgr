@@ -3,7 +3,7 @@ package storage
 import (
 	"errors"
 
-	"github.com/rohithputha/hymStMgr/dstrutsgo"
+	"github.com/rohithputha/hymStMgr/utils"
 )
 
 // LRUK should maintain the times of the pages that are accessed,
@@ -15,24 +15,24 @@ import (
 type ReplPol interface {
 	initPageLruk(pageIndex int)
 	addPageTime(pageIndex int, timestamp int64) (err error)
-	findReplPage(timestamp int64, excludedPages dstrutsgo.ISet[int]) (pageIndex int)
+	findReplPage(timestamp int64, excludedPages utils.ISet[int]) (pageIndex int)
 }
 
 type lruk struct {
-	pageHistMap     map[int](dstrutsgo.IQueue[int64])
+	pageHistMap     map[int](utils.IQueue[int64])
 	pageLastTimeMap map[int]int64
 }
 
 func getLrukReplPol() ReplPol {
 	lruk := lruk{
-		pageHistMap: make(map[int]dstrutsgo.IQueue[int64]),
+		pageHistMap: make(map[int]utils.IQueue[int64]),
 		pageLastTimeMap: make(map[int]int64),
 	}
 	return &lruk
 }
 
 func (l *lruk) initPageLruk(pageIndex int) {
-	l.pageHistMap[pageIndex] = dstrutsgo.GetNewQueue[int64](4)
+	l.pageHistMap[pageIndex] = utils.GetNewQueue[int64](4)
 	l.pageLastTimeMap[pageIndex] = int64(0)
 }
 
@@ -64,7 +64,7 @@ func (l *lruk) addPageTime(pageIndex int, timestamp int64) (err error) {
 	return nil
 }
 
-func (l *lruk) findReplPage(timestamp int64, excludedPages dstrutsgo.ISet[int]) (pageIndex int) {
+func (l *lruk) findReplPage(timestamp int64, excludedPages utils.ISet[int]) (pageIndex int) {
 	minTime := timestamp
 	victim := -1
 	for pageIndex, timeQueue := range l.pageHistMap {

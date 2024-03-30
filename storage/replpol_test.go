@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rohithputha/hymStMgr/dstrutsgo"
+	"github.com/rohithputha/hymStMgr/utils"
 )
 
 func TestLrukReplPolInit(test *testing.T){
@@ -16,7 +16,7 @@ func TestLrukReplPolInit(test *testing.T){
 
 func TestLrukReplPolPageInit(test *testing.T){
 	lruk :=lruk{
-		pageHistMap: make(map[int]dstrutsgo.IQueue[int64]),
+		pageHistMap: make(map[int]utils.IQueue[int64]),
 		pageLastTimeMap: make(map[int]int64),
 	}
 	lruk.initPageLruk(0)
@@ -30,7 +30,7 @@ func TestLrukReplPolPageInit(test *testing.T){
 
 func TestLrukAddTime(test *testing.T){
 	lruk :=lruk{
-		pageHistMap: make(map[int]dstrutsgo.IQueue[int64]),
+		pageHistMap: make(map[int]utils.IQueue[int64]),
 		pageLastTimeMap: make(map[int]int64),
 	}
 	lruk.initPageLruk(0)
@@ -43,7 +43,7 @@ func TestLrukAddTime(test *testing.T){
 
 func TestLrukAddTimeMulti(test *testing.T){
 	lruk :=lruk{
-		pageHistMap: make(map[int]dstrutsgo.IQueue[int64]),
+		pageHistMap: make(map[int]utils.IQueue[int64]),
 		pageLastTimeMap: make(map[int]int64),
 	}
 	lruk.initPageLruk(0)
@@ -58,7 +58,7 @@ func TestLrukAddTimeMulti(test *testing.T){
 
 func TestLrukAddTimeMultiCorrPeriod(test *testing.T){
 	lruk :=lruk{
-		pageHistMap: make(map[int]dstrutsgo.IQueue[int64]),
+		pageHistMap: make(map[int]utils.IQueue[int64]),
 		pageLastTimeMap: make(map[int]int64),
 	}
 	lruk.initPageLruk(0)
@@ -78,7 +78,7 @@ func TestLrukAddTimeMultiCorrPeriod(test *testing.T){
 
 func TestLrukFindReplPage(test *testing.T){
 	lruk :=lruk{
-		pageHistMap: make(map[int]dstrutsgo.IQueue[int64]),
+		pageHistMap: make(map[int]utils.IQueue[int64]),
 		pageLastTimeMap: make(map[int]int64),
 	}
 	lruk.initPageLruk(0)
@@ -92,7 +92,7 @@ func TestLrukFindReplPage(test *testing.T){
 	lruk.pageLastTimeMap[0]=2520
 	lruk.pageLastTimeMap[1]=2510
 	
-	replPageIndex:= lruk.findReplPage(3530,dstrutsgo.GetNewSet[int]())
+	replPageIndex:= lruk.findReplPage(3530,utils.GetNewSet[int]())
 	if replPageIndex!=1{
 		test.Errorf("lruk find repl page not working as expected")
 	}
