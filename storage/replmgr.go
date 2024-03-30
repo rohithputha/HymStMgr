@@ -3,7 +3,7 @@ package storage
 import (
 	"errors"
 
-	"github.com/rohithputha/hymStMgr/utils"
+	"github.com/rohithputha/HymStMgr/utils"
 )
 
 // LRUK should maintain the times of the pages that are accessed,
@@ -25,7 +25,7 @@ type lruk struct {
 
 func getLrukReplPol() ReplPol {
 	lruk := lruk{
-		pageHistMap: make(map[int]utils.IQueue[int64]),
+		pageHistMap:     make(map[int]utils.IQueue[int64]),
 		pageLastTimeMap: make(map[int]int64),
 	}
 	return &lruk
@@ -51,7 +51,7 @@ func (l *lruk) addPageTime(pageIndex int, timestamp int64) (err error) {
 			return nil
 		}
 		corPeriod := l.pageLastTimeMap[pageIndex] - recentTime
-		for i := 0; i < timeQueue.GetSize(); i++ {   // internal queue has this structure ->  (head,....., tail) (head -> 0 , tail -> len(q)-1) tail is the most recent element to be pushed
+		for i := 0; i < timeQueue.GetSize(); i++ { // internal queue has this structure ->  (head,....., tail) (head -> 0 , tail -> len(q)-1) tail is the most recent element to be pushed
 			queueEle, queueGetErr := timeQueue.Get(i)
 			if queueGetErr != nil {
 				return queueGetErr
@@ -81,11 +81,11 @@ func (l *lruk) findReplPage(timestamp int64, excludedPages utils.ISet[int]) (pag
 		}
 	}
 	if victim == -1 {
-		for pageIndex, _ :=range l.pageHistMap{
+		for pageIndex, _ := range l.pageHistMap {
 			if excludedPages.Contains(pageIndex) {
 				continue
 			}
-			return pageIndex // not a very efficient way to return the pageIndex but increases prob of finding a repl page. need to test the real impact later. 
+			return pageIndex // not a very efficient way to return the pageIndex but increases prob of finding a repl page. need to test the real impact later.
 		}
 	}
 	return victim

@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rohithputha/hymStMgr/constants"
-	"github.com/rohithputha/hymStMgr/diskmgr"
-	"github.com/rohithputha/hymStMgr/utils"
+	"github.com/rohithputha/HymStMgr/constants"
+	"github.com/rohithputha/HymStMgr/diskmgr"
+	"github.com/rohithputha/HymStMgr/utils"
 )
 
 type buffPoolStats struct {
@@ -88,7 +88,6 @@ func (bp *BuffPoolMgrStr) FetchPage(pageId int) (page *Page, readErr error) {
 	return sPage, nil
 }
 
-
 func (bp *BuffPoolMgrStr) flushPageByIndex(pageIndex int) (flushErr error) {
 	if bp.pagePool[pageIndex].Pin == 0 && !bp.pagePool[pageIndex].IsCorrupted {
 		if bp.pagePool[pageIndex].IsDirty {
@@ -119,7 +118,6 @@ func (bp *BuffPoolMgrStr) FlushPage(pageId int) (flushErr error) {
 		return errors.New("page failed for pageId: " + fmt.Sprintf("%d", pageId))
 	}
 }
-
 
 func (bp *BuffPoolMgrStr) allocatePageId() (pageId int) {
 	return bp.diskMgr.GetPageCount()
