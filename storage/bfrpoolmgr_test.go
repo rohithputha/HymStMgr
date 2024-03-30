@@ -3,8 +3,8 @@ package storage
 import (
 	"testing"
 
-	"github.com/rohithputha/hymStMgr/constants"
-	"github.com/rohithputha/hymStMgr/diskmgr"
+	"github.com/rohithputha/HymStMgr/constants"
+	"github.com/rohithputha/HymStMgr/diskmgr"
 )
 
 func TestInitBufferPoolMgr(test *testing.T) {

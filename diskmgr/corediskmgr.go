@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/rohithputha/hymStMgr/constants"
+	"github.com/rohithputha/HymStMgr/constants"
 )
 
 const dbFileFormat string = ".db"
