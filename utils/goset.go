@@ -5,12 +5,12 @@ import (
 	"sync"
 )
 
-type set[T string | int | float64] struct {
+type set[T comparable] struct {
 	data *(map[T]bool)
 	smux *sync.Mutex
 }
 
-type ISet[T string | int | float64] interface {
+type ISet[T comparable] interface {
 	Add(ele T)
 	Delete(ele T)
 	Contains(ele T) (cont bool)
@@ -18,7 +18,7 @@ type ISet[T string | int | float64] interface {
 	GetAvailableElement() (ele T, err error)
 }
 
-func GetNewSet[T string | int | float64]() ISet[T] {
+func GetNewSet[T comparable]() ISet[T] {
 	newMap := make(map[T]bool)
 	return &set[T]{
 		data: &newMap,
