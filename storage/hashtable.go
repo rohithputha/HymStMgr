@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"fmt"
 	"github.com/cespare/xxhash/v2"
 	"github.com/rohithputha/HymStMgr/constants"
 	"github.com/rohithputha/HymStMgr/utils"
@@ -49,7 +50,7 @@ func GetExtensibleHashTable[K string | int, V any]() ExtensibleHashTableMgr[K, V
 
 func getHashValue[K string | int](key K, depth int) int {
 	digest := xxhash.Digest{}
-	hashVal, hashErr := digest.WriteString(string(key))
+	hashVal, hashErr := digest.WriteString(fmt.Sprint(key))
 	if hashErr != nil {
 		return -1
 	}
