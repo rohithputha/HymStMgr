@@ -80,7 +80,7 @@ func (eh *ExtensibleHashTable[K, V]) reHashLocal(fullBucket *bucket[K, V]) {
 	newBucket1 := getNewBucket[K, V](presentHash<<1, fullBucket.localDepth+1)
 	newBucket2 := getNewBucket[K, V]((presentHash<<1)&1, fullBucket.localDepth+1)
 	for _, kvp := range fullBucket.bucketArray {
-		newHash := getHashValue[K, V](kvp.key, fullBucket.localDepth+1)
+		newHash := getHashValue[K](kvp.key, fullBucket.localDepth+1)
 		if newHash == newBucket1.hash {
 			newBucket1.bucketArray = append(newBucket1.bucketArray, kvp)
 			newBucket1.keySet.Add(kvp.key)
