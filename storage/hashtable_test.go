@@ -41,7 +41,7 @@ func TestExtensibleHashTable_Insert3(t *testing.T) {
 	testVal := 10
 	testArr := []*int{&testVal}
 	for i := 0; i < 22; i++ {
-		hashtable.Insert(rand.Intn(100), &testVal)
+		hashtable.Insert(rand.Intn(1000), &testVal)
 	}
 	hashtable.Insert(11, &testVal)
 	assert.Equal(t, testArr, hashtable.Find(11))

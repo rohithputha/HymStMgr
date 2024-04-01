@@ -64,7 +64,7 @@ func getNewBucket[K string | int, V any](hash int, localDepth int) *bucket[K, V]
 	return &bucket[K, V]{hash: hash, localDepth: localDepth, bucketArray: make([]*kvPair[K, V], 0), keySet: utils.GetNewSet[K]()}
 }
 
-func (eh *ExtensibleHashTable[K, V]) reHash(fullBucket *bucket[K, V]) {
+func (eh *ExtensibleHashTable[K, V]) newHashTable(fullBucket *bucket[K, V]) {
 	newHashTable := make([]*bucket[K, V], int(math.Pow(2, float64(eh.globalDepth+1))))
 	for oldHash, bucket := range eh.hashTable {
 		if oldHash == fullBucket.hash {
@@ -78,7 +78,7 @@ func (eh *ExtensibleHashTable[K, V]) reHash(fullBucket *bucket[K, V]) {
 	eh.hashTable = newHashTable
 }
 
-func (eh *ExtensibleHashTable[K, V]) reHashLocal(fullBucket *bucket[K, V]) {
+func (eh *ExtensibleHashTable[K, V]) reDistributeFullBucket(fullBucket *bucket[K, V]) {
 	presentHash := fullBucket.hash
 	newBucket1 := getNewBucket[K, V](presentHash<<1, fullBucket.localDepth+1)
 	newBucket2 := getNewBucket[K, V]((presentHash<<1)|1, fullBucket.localDepth+1)
@@ -115,10 +115,10 @@ func (eh *ExtensibleHashTable[K, V]) Insert(key K, val *V) {
 	insertionBucket := eh.hashTable[hash]
 	if insertionBucket.keySet.GetSize() > constants.MaxBucketSize {
 		if insertionBucket.localDepth == eh.globalDepth {
-			eh.reHash(insertionBucket)
+			eh.newHashTable(insertionBucket)
 			eh.globalDepth += 1
 		}
-		eh.reHashLocal(insertionBucket)
+		eh.reDistributeFullBucket(insertionBucket)
 		insertionBucket = eh.hashTable[getHashValue[K](key, eh.globalDepth)]
 	}
 	insertionBucket.bucketArray = append(insertionBucket.bucketArray, &kvPair[K, V]{key: key, val: val})
