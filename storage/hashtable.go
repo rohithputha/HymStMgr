@@ -5,6 +5,7 @@ import (
 	"github.com/cespare/xxhash/v2"
 	"github.com/rohithputha/HymStMgr/constants"
 	"github.com/rohithputha/HymStMgr/utils"
+	"math"
 	"sync"
 )
 
@@ -50,12 +51,13 @@ func GetExtensibleHashTable[K string | int, V any]() ExtensibleHashTableMgr[K, V
 
 func getHashValue[K string | int](key K, depth int) int {
 	digest := xxhash.Digest{}
-	hashVal, hashErr := digest.WriteString(fmt.Sprint(key))
-	if hashErr != nil {
+	_, digErr := digest.WriteString(fmt.Sprint(key))
+	hashVal := digest.Sum64()
+	if digErr != nil {
 		return -1
 	}
 	mask := (1 << depth) - 1
-	return hashVal & mask
+	return int(hashVal) & mask // is this an issue?
 }
 
 func getNewBucket[K string | int, V any](hash int, localDepth int) *bucket[K, V] {
@@ -63,13 +65,13 @@ func getNewBucket[K string | int, V any](hash int, localDepth int) *bucket[K, V]
 }
 
 func (eh *ExtensibleHashTable[K, V]) reHash(fullBucket *bucket[K, V]) {
-	newHashTable := make([]*bucket[K, V], eh.globalDepth+1)
+	newHashTable := make([]*bucket[K, V], int(math.Pow(2, float64(eh.globalDepth+1))))
 	for oldHash, bucket := range eh.hashTable {
 		if oldHash == fullBucket.hash {
 			continue
 		}
 		newHash1 := oldHash << 1
-		newHash2 := (oldHash << 1) & 1
+		newHash2 := (oldHash << 1) | 1
 		newHashTable[newHash1] = bucket
 		newHashTable[newHash2] = bucket
 	}
@@ -79,7 +81,7 @@ func (eh *ExtensibleHashTable[K, V]) reHash(fullBucket *bucket[K, V]) {
 func (eh *ExtensibleHashTable[K, V]) reHashLocal(fullBucket *bucket[K, V]) {
 	presentHash := fullBucket.hash
 	newBucket1 := getNewBucket[K, V](presentHash<<1, fullBucket.localDepth+1)
-	newBucket2 := getNewBucket[K, V]((presentHash<<1)&1, fullBucket.localDepth+1)
+	newBucket2 := getNewBucket[K, V]((presentHash<<1)|1, fullBucket.localDepth+1)
 	for _, kvp := range fullBucket.bucketArray {
 		newHash := getHashValue[K](kvp.key, fullBucket.localDepth+1)
 		if newHash == newBucket1.hash {
@@ -91,7 +93,7 @@ func (eh *ExtensibleHashTable[K, V]) reHashLocal(fullBucket *bucket[K, V]) {
 		}
 	}
 	eh.hashTable[presentHash<<1] = newBucket1
-	eh.hashTable[(presentHash<<1)&1] = newBucket2
+	eh.hashTable[(presentHash<<1)|1] = newBucket2
 }
 func (eh *ExtensibleHashTable[K, V]) Find(key K) (val []*V) {
 	eh.htMux.RLock()
@@ -100,7 +102,9 @@ func (eh *ExtensibleHashTable[K, V]) Find(key K) (val []*V) {
 	bucket := eh.hashTable[hash]
 	results := make([]*V, 0)
 	for _, kvp := range bucket.bucketArray {
-		results = append(results, kvp.val)
+		if kvp.key == key {
+			results = append(results, kvp.val)
+		}
 	}
 	return results
 }
