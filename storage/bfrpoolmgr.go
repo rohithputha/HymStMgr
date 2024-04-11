@@ -21,7 +21,7 @@ type BuffPoolMgrStr struct {
 	*buffPoolStats
 	replPol  ReplPol
 	pagePool []Page
-	pageMap  map[int]int //mapping from pageId to pagePool index
+	pageMap  map[int]int //mapping from PageId to pagePool index
 	freeSet  utils.ISet[int]
 	pinSet   utils.ISet[int]
 	pagesMem int
@@ -42,7 +42,7 @@ func InitBuffPoolMgr(dikFileInit diskmgr.DiskFileInit) (BuffPoolMgr *BuffPoolMgr
 	}
 
 	for i := range constants.BufferPoolSize {
-		buffPool.pagePool[i].pageMux = &sync.Mutex{}
+		buffPool.pagePool[i].pageMux = &sync.RWMutex{}
 		buffPool.freeSet.Add(i)
 		buffPool.replPol.initPageLruk(i)
 	}
@@ -51,7 +51,7 @@ func InitBuffPoolMgr(dikFileInit diskmgr.DiskFileInit) (BuffPoolMgr *BuffPoolMgr
 }
 
 /*
-Fetch page should take a pageId and then return a page
+Fetch page should take a PageId and then return a page
 if the page is already in memory, then it should return the pointer to that page
 else laod the page from disk to one of the free pages and then return the pointer to it.
 */
@@ -104,7 +104,7 @@ func (bp *BuffPoolMgrStr) flushPageByIndex(pageIndex int) (flushErr error) {
 }
 
 /*
-FlushPage should take a pageId as input and then flush the page to the disk
+FlushPage should take a PageId as input and then flush the page to the disk
 if the page is pinned and is corrupted the flush will fail
 on successful flush, isDirty should be marked as false
 */
@@ -115,7 +115,7 @@ func (bp *BuffPoolMgrStr) FlushPage(pageId int) (flushErr error) {
 	if _, ok := bp.pageMap[pageId]; ok {
 		return bp.flushPageByIndex(bp.pageMap[1])
 	} else {
-		return errors.New("page failed for pageId: " + fmt.Sprintf("%d", pageId))
+		return errors.New("page failed for PageId: " + fmt.Sprintf("%d", pageId))
 	}
 }
 

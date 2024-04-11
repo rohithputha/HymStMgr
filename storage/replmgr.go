@@ -10,7 +10,7 @@ import (
 // Find a victim page if needed based on the info it has stored till then
 // reset the stored data for a page
 // should setup
-// should it store info based on pageIndex or pageId? maybe go with pageIndex: will be easy on memory but not accurate I feel.
+// should it store info based on pageIndex or PageId? maybe go with pageIndex: will be easy on memory but not accurate I feel.
 
 type ReplPol interface {
 	initPageLruk(pageIndex int)
