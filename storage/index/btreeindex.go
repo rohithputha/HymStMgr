@@ -97,15 +97,74 @@ type btreePageMgr[K string | int] interface {
 	getPageType() int
 	getPageKeys() []K
 	getPageValues() []*Value
-	getNextPtr() int
 	getMaxSize() int
+	getSize() int
+	getParent() int
+	getPageId() int
 	setKeys(keys []K)
 	setValues(values []*Value)
+	setSize(int)
+	setAdditionalHeader(string, int)
+}
 
-	//page iterator functions
-	next(key K) (value *Value, index int)
+type leafPageIterator[K string | int] interface {
+	next(key K) (values []*Value, indices []int, foundKey bool, isInNextPage bool)
+	nextSib() (pageId int)
+	prevSib() (pageId int)
+	parent() (pageId int)
+}
+
+type innerPageIterator[K string | int] interface {
 	isNext() bool
-	parent() int
+	next(key K) (values []*Value, indices []int, foundKey bool)
+	parent() (pageId int)
+}
+
+func (bpage *btreeLeafPage[K]) next(key K) ([]*Value, []int, bool, bool) {
+	lind := bpage.lowerBinarySearchKey(key)
+	if lind == -1 {
+		return nil, nil, false, false
+	}
+	if bpage.keys[lind] != key {
+		return []*Value{bpage.values[lind]}, []int{lind}, false, false
+	}
+	rind := bpage.higherBinarySearchKey(key)
+	values := make([]*Value, 0)
+	indices := make([]int, 0)
+	for i := lind; i <= rind; i++ {
+		values = append(values, bpage.values[i])
+		indices = append(indices, i)
+	}
+	return values, indices, true, rind == bpage.getSize()-1
+}
+
+func (bpage *btreeLeafPage[K]) nextSib() int {
+	return bpage.additionalHeaders["NextPtr"]
+}
+func (bpage *btreeLeafPage[K]) prevSib() int {
+	return bpage.additionalHeaders["PrevPtr"]
+}
+
+func (bpage *btreeLeafPage[K]) parent() int {
+	return bpage.additionalHeaders["ParentId"]
+}
+
+func (bpage *btreeInnerPage[K]) next(key K) ([]*Value, []int, bool) {
+	lind := bpage.lowerBinarySearchKey(key)
+	if lind == -1 {
+		return []*Value{initInnerPageValue(bpage.additionalHeaders["NextPtr"])}, []int{-1}, false
+	}
+	if bpage.keys[lind] != key {
+		return []*Value{bpage.values[lind]}, []int{lind}, false
+	}
+	rind := bpage.higherBinarySearchKey(key)
+	values := make([]*Value, 0)
+	indices := make([]int, 0)
+	for i := lind; i <= rind; i++ {
+		values = append(values, bpage.values[i])
+		indices = append(indices, i)
+	}
+	return values, indices, true
 }
 
 func (bpage *btreePage[K]) setKeys(keys []K) {
@@ -115,12 +174,19 @@ func (bpage *btreePage[K]) setValues(values []*Value) {
 	bpage.values = values
 }
 
+func (bpage *btreePage[K]) setSize(newSize int) {
+	bpage.bp.Size = newSize
+}
+func (bpage *btreePage[K]) setAdditionalHeader(key string, value int) {
+	// ** additional check to make sure the key is present in the additional headers
+	bpage.additionalHeaders[key] = value
+}
+
 func (bpage *btreePage[K]) getMaxSize() int {
 	return bpage.bp.MaxSize
 }
-
-func (bpage *btreePage[K]) getNextPtr() int {
-	return bpage.additionalHeaders["NextPtr"]
+func (bpage *btreePage[K]) getSize() int {
+	return bpage.bp.Size
 }
 
 func (bpage *btreePage[K]) getPageType() int {
@@ -135,27 +201,18 @@ func (bpage *btreePage[K]) getPageValues() []*Value {
 	return bpage.values
 }
 
-func (bpage *btreeInnerPage[K]) next(key K) (*Value, int) {
-	ind := bpage.binarySearchKey(key)
-	if ind != -1 {
-		return bpage.values[ind], ind
-	}
-	return initInnerPageValue(bpage.additionalHeaders["NextPtr"]), -1
+func (bpage *btreePage[K]) getParent() int {
+	return bpage.bp.ParentPageId
+}
+func (bpage *btreePage[K]) getPageId() int {
+	return bpage.bp.PageId
 }
 
-func (bpage *btreeLeafPage[K]) next(key K) (*Value, int) {
-	ind := bpage.binarySearchKey(key)
-	if ind != -1 {
-		return bpage.values[ind], ind
-	}
-	return nil, -1
-}
-
-func (bpage *btreePage[K]) isNext() bool {
+func (bpage *btreeInnerPage[K]) isNext() bool {
 	return bpage.bp.PageType == constants.InnerPageType
 }
 
-func (bpage *btreePage[K]) parent() int {
+func (bpage *btreeInnerPage[K]) parent() int {
 	return bpage.additionalHeaders["ParentId"]
 }
 
@@ -177,7 +234,6 @@ func (bi *btreeLeafPage[K]) decode() {
 		bi.additionalHeaders[v] = bi.brK.nextInt(buffer)
 	}
 	// it is assumed that the all the struct elements are declared and made...
-
 	for i := 0; i < bi.additionalHeaders["TotalKV"]; i++ {
 		bi.keys = append(bi.keys, bi.brK.next(buffer))
 		bi.values = append(bi.values, initLeafPageValue(bi.brK.nextInt(buffer), bi.brK.nextInt16(buffer)))
@@ -234,70 +290,192 @@ func (bti *btreeIndex[K]) requestNewPage(pageType int) btreePageMgr[K] {
 	return nil
 }
 
-func (bti *btreeIndex[K]) iterateTree(page btreePageMgr[K], key K) {
-	for page.isNext() {
-		if page.getPageType() == constants.InnerPageType {
-			value, _ := page.next(key)
-			page = bti.requestPage(value.getValuePid())
-		}
+func (bti *btreeIndex[K]) getIterator(page btreePageMgr[K]) interface{} {
+	switch page.getPageType() {
+	case constants.InnerPageType:
+		var innerPageIterator innerPageIterator[K] = page.(*btreeInnerPage[K])
+		return innerPageIterator
+	case constants.LeafPageType:
+		var leafPageIterator leafPageIterator[K] = page.(*btreeLeafPage[K])
+		return leafPageIterator
+	default:
+		return nil
 	}
 }
 
-func (bti *btreeIndex[K]) search(key K) (pageId int, slotId int16) {
+func (bti *btreeIndex[K]) resetPageMetaData(page btreePageMgr[K]) {
+	page.setSize(len(page.getPageKeys()))
+
+}
+
+func (bti *btreeIndex[K]) search(key K) []*Value {
 	rootPageId := bti.getRootPageId()
 	page := bti.requestPage(rootPageId)
-	bti.iterateTree(page, key)
-	val, _ := page.next(key)
-	return val.getValuePid(), val.getValueSid()
+	var innerPageItr innerPageIterator[K]
+	var leafPageItr leafPageIterator[K]
+	if page.getPageType() == constants.InnerPageType {
+		var ok = true
+		iterator := bti.getIterator(page)
+		innerPageItr, ok = iterator.(innerPageIterator[K])
+		for ok && innerPageItr.isNext() {
+			values, _, _ := innerPageItr.next(key)
+			page = bti.requestPage(values[0].getValuePid())
+			innerPageItr, ok = bti.getIterator(page).(innerPageIterator[K])
+		}
+	}
+	leafPageItr, _ = bti.getIterator(page).(leafPageIterator[K]) // ** do we have to use ok and add an additional check for ok?
+	values, _, foundKey, isInNextPage := leafPageItr.next(key)
+	if !foundKey {
+		return nil
+	}
+	var nextVals []*Value
+	for isInNextPage {
+		page = bti.requestPage(leafPageItr.nextSib())
+		leafPageItr, _ = bti.getIterator(page).(leafPageIterator[K])
+		nextVals, _, foundKey, isInNextPage = leafPageItr.next(key)
+		if !foundKey {
+			break
+		}
+		values = append(values, nextVals...)
+	}
+	return values
 }
 
 func (bti *btreeIndex[K]) insert(key K, presentPageId int, pageId int, slotId int16) {
 	if presentPageId == -1 {
 		presentPageId = bti.getRootPageId()
 	}
-	page := bti.requestPage(presentPageId)
-	bti.iterateTree(page, key)
-	bti.insertTuple(key, page, pageId, slotId)
+	stack := []*Value{initInnerPageValue(presentPageId)}
+	var backupPage btreePageMgr[K] = nil
+	for len(stack) > 0 {
+		page := bti.requestPage(stack[len(stack)-1].getValuePid())
+		stack = stack[:len(stack)-1]
+		if page.getPageType() == constants.InnerPageType {
+			innerPageItr := bti.getIterator(page).(innerPageIterator[K])
+			values, _, _ := innerPageItr.next(key)
+			stack = append(stack, values...)
+		}
+		if page.getPageType() == constants.LeafPageType {
+			if page.getSize()+1 <= page.getMaxSize() {
+				bti.insertTuple(key, initLeafPageValue(pageId, slotId), page)
+				return
+			} else {
+				if backupPage != nil {
+					backupPage = page
+				}
+				stack = stack[:len(stack)-1]
+			}
+		}
+		if backupPage != nil {
+			bti.insertTuple(key, initLeafPageValue(pageId, slotId), backupPage)
+		}
+
+		// *** add another method call to change the appropriate meta data
+		return
+	}
 }
 
-func (bti *btreeIndex[K]) insertTuple(key K, page btreePageMgr[K], pageId int, slotId int16) {
-	_, insertIndex := page.next(key)
+func (bti *btreeIndex[K]) insertTuple(key K, value *Value, page btreePageMgr[K]) {
 	keys := page.getPageKeys()
 	vals := page.getPageValues()
-	if insertIndex != -1 {
+	if page.getPageType() == constants.InnerPageType {
+		innerPageItr := page.(innerPageIterator[K])
+		_, indices, _ := innerPageItr.next(key)
+		if indices[0] == -1 {
+			keys = append(keys, key)
+			vals = append(vals, value)
+		} else {
+			insertIndex := indices[0]
+			keys = append(keys[:insertIndex], append([]K{key}, keys[insertIndex:]...)...)
+			vals = append(vals[:insertIndex], append([]*Value{value}, vals[insertIndex:]...)...)
+		}
+	} else if page.getPageType() == constants.LeafPageType {
+		leafPageItr := page.(leafPageIterator[K])
+		_, indices, _, _ := leafPageItr.next(key)
+		if indices == nil {
+			panic("leaf page should not have a nil index")
+		}
+		insertIndex := indices[0]
 		keys = append(keys[:insertIndex], append([]K{key}, keys[insertIndex:]...)...)
-		vals = append(vals[:insertIndex], append([]*Value{initLeafPageValue(pageId, slotId)}, vals[insertIndex:]...)...)
-	} else {
-		keys = append(keys, key)
-		vals = append(vals, initLeafPageValue(pageId, slotId))
+		vals = append(vals[:insertIndex], append([]*Value{value}, vals[insertIndex:]...)...)
 	}
-	if len(keys) > page.getMaxSize() {
+	if page.getSize() > page.getMaxSize() {
 		bti.iterativeSplit(page)
 	}
 }
 
 func (bti *btreeIndex[K]) iterativeSplit(page btreePageMgr[K]) {
-	newPage, splitKey := bti.splitPage(page)
-	parentPage := bti.requestPage(page.parent())
-	bti.insertTuple(splitKey, parentPage, newPage.getPageType(), -1)
+	var newPageId int
+	var splitKey K
+	if page.getPageType() == constants.InnerPageType {
+		newPageId, splitKey = bti.splitInnerPage(page)
+		// when the inner page is split we need to take care of the change in the parent pointers of the child pages
+	} else if page.getPageType() == constants.LeafPageType {
+		// when the leaf page is split, we need to make sure that the next and prev pointers are set correctly
+		newPageId, splitKey = bti.splitLeafPage(page)
+	}
+
+	var parentPage btreePageMgr[K]
+	if page.getParent() == -1 {
+		parentPage = bti.requestNewPage(constants.InnerPageType) // request New page should also take the parentId as an input?
+		//bti.insertTuple(page.getPageKeys()[len(page.getPageKeys())-1], initInnerPageValue(page.getPageId()), parentPage)
+		parentPage.setAdditionalHeader("NextPtr", page.getPageId())
+	} else {
+		parentPage = bti.requestPage(page.getParent())
+	}
+
+	bti.insertTuple(splitKey, initInnerPageValue(newPageId), parentPage)
 }
 
-func (bti *btreeIndex[K]) splitPage(page btreePageMgr[K]) (newPage btreePageMgr[K], splitKey K) {
-	newPage = bti.requestNewPage(page.getPageType())
+func (bti *btreeIndex[K]) splitInnerPage(page btreePageMgr[K]) (newPageId int, splitKey K) {
+	newPage := bti.requestNewPage(page.getPageType())
+	keys := page.getPageKeys()
+	values := page.getPageValues()
+	midKeyIndex := len(keys) / 2
+	midKey := keys[midKeyIndex]
+	midVal := values[midKeyIndex]
+	keysSplit1 := keys[0 : midKeyIndex-1]
+	valSplit1 := values[0 : midKeyIndex-1]
+	keysSplit2 := keys[midKeyIndex+1:]
+	valSplit2 := values[midKeyIndex+1:]
+	page.setKeys(keysSplit2)
+	page.setValues(valSplit2)
+	newPage.setKeys(keysSplit1)
+	newPage.setValues(valSplit1)
+	newPage.setAdditionalHeader("NextPtr", midVal.getValuePid())
+	bti.reDistributeChild(page, newPage.getPageId(), midKeyIndex)
+	return newPage.getPageId(), midKey
+}
+
+func (bti *btreeIndex[K]) reDistributeChild(oldPage btreePageMgr[K], newPageId int, splitIndex int) {
+	for i := 0; i < splitIndex; i++ {
+		childPage := bti.requestPage(oldPage.getPageValues()[i].getValuePid())
+		childPage.setAdditionalHeader("ParentId", newPageId)
+	}
+}
+
+func (bti *btreeIndex[K]) splitLeafPage(page btreePageMgr[K]) (newPageId int, splitKey K) {
+	newPage := bti.requestNewPage(page.getPageType()) // check the above comment?
 	keys := page.getPageKeys()
 	vals := page.getPageValues()
-	keySplit1 := keys[0 : len(keys)/2]
+	keysSplit1 := keys[0 : len(keys)/2]
 	keysSplit2 := keys[len(keys)/2:]
 	valsSplit1 := vals[0 : len(vals)/2]
 	valsSplit2 := vals[len(vals)/2:]
-	splitKey = keys[len(keys)/2]
-	page.setKeys(keySplit1)
-	page.setValues(valsSplit1)
-	newPage.setKeys(keysSplit2)
-	newPage.setValues(valsSplit2)
+	page.setKeys(keysSplit2)
+	page.setValues(valsSplit2)
+	newPage.setKeys(keysSplit1)
+	newPage.setValues(valsSplit1)
+
+	//newPage.setAdditionalHeader("PrevPtr", page.get)
+
+	// fix this ...
 
 	// ** need to rewrite additional headers
-	return newPage, newPage.getPageKeys()[len(newPage.getPageKeys())-1]
+	// set parent header for inner page
+	// set leaf next and prev accordingly
+	// if leaf page changes to inner page -> create a new inner page if the leaf page parent is nil -> root leaf page
+	return newPage.getPageId(), keysSplit1[len(keysSplit1)-1]
 }
 
 // -------------------------------------------------------------------------
@@ -315,21 +493,34 @@ func (bti *btreeIndex[K]) getRootPageId() int {
 
 // core binary search logic
 
-func (bpage *btreePage[K]) binarySearchKey(key K) (resIndex int) {
+func (bpage *btreePage[K]) lowerBinarySearchKey(key K) (resIndex int) {
 	low := 0
 	high := len(bpage.keys)
 	resIndex = -1
-	for low < high {
+	for low <= high {
 		mid := low + (high-low)/2
-		if key < bpage.keys[mid] {
+		if key <= bpage.keys[mid] {
 			resIndex = mid
-			low = mid + 1
-		} else {
 			high = mid - 1
+		} else {
+			low = mid + 1
 		}
 	}
 	return resIndex
 }
 
-func (bpage *btreePage[K]) rangeBinarySearchKey(key K) (resIndex int) {
+func (bpage *btreePage[K]) higherBinarySearchKey(key K) (resIndex int) {
+	low := 0
+	high := len(bpage.keys)
+	resIndex = -1
+	for low <= high {
+		mid := low + (high-low)/2
+		if key < bpage.keys[mid] {
+			high = mid - 1
+		} else {
+			resIndex = mid
+			low = mid + 1
+		}
+	}
+	return resIndex
 }
