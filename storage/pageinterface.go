@@ -25,6 +25,11 @@ type Page struct {
 	pageMux     *sync.RWMutex
 }
 
+type PageInterface interface {
+	MarkDirty()
+	PinPage()
+}
+
 type BasePage struct {
 	PageType     int //8bytes
 	Lsn          int //8bytes
@@ -162,4 +167,11 @@ func (p *Page) GetDecodedBasePage() *BasePage {
 
 func (p *Page) isDecoded() bool {
 	return p.PageId == p.bp.PageId
+}
+
+func (p *Page) MarkDirty() {
+	p.IsDirty = true
+}
+func (p *Page) PinPage() {
+	p.Pin++
 }

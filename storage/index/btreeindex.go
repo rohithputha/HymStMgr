@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"github.com/rohithputha/HymStMgr/constants"
+	"github.com/rohithputha/HymStMgr/diskmgr"
 	"github.com/rohithputha/HymStMgr/storage"
 )
 
@@ -77,11 +78,12 @@ func (v *Value) getValueSid() int16 {
 }
 
 type btreePage[K string | int] struct {
-	bp                *storage.BasePage
-	additionalHeaders map[string]int
-	keys              []K
-	values            []*Value
-	brK               bufferReader[K]
+	bp                    *storage.BasePage
+	pageMetadatainterface storage.PageInterface
+	additionalHeaders     map[string]int
+	keys                  []K
+	values                []*Value
+	brK                   bufferReader[K]
 }
 
 type btreeInnerPage[K string | int] struct {
@@ -102,7 +104,7 @@ type btreePageMgr[K string | int] interface {
 	getSize() int
 	getParent() int
 	getPageId() int
-	//getIterator() interface{}
+	getPageMetadataInterface() storage.PageInterface
 
 	setKeys(keys []K)
 	setValues(values []*Value)
@@ -180,9 +182,11 @@ func (bpage *btreeInnerPage[K]) next(key K) ([]*Value, []int, bool) {
 }
 
 func (bpage *btreePage[K]) setKeys(keys []K) {
+	bpage.pageMetadatainterface.MarkDirty()
 	bpage.keys = keys
 }
 func (bpage *btreePage[K]) setValues(values []*Value) {
+	bpage.pageMetadatainterface.MarkDirty()
 	bpage.values = values
 }
 
@@ -228,6 +232,10 @@ func (bpage *btreeInnerPage[K]) parent() int {
 	return bpage.additionalHeaders["ParentId"]
 }
 
+func (bpage *btreePage[K]) getPageMetadataInterface() storage.PageInterface {
+	return bpage.pageMetadatainterface
+}
+
 func (bi *btreeInnerPage[K]) decode() {
 	buffer := bytes.NewBuffer(bi.bp.DataArea)
 	for _, v := range btreeInnerPageHeaders {
@@ -267,8 +275,8 @@ func (bi *btreeLeafPage[K]) getIterator() leafPageIterator[K] {
 type btreeIndexMgr[K string | int] interface {
 	requestPage(pageId int) btreePageMgr[K]
 	requestNewPage(pageType int) btreePageMgr[K]
-	insert(key K, pageId int, slotId int16)
-	search(key K) (pageId int, slotId int16) // simple search
+	insert(key K, presentPageId int, pageId int, slotId int16)
+	search(key K) []*Value // simple search
 	//replacePage(oldPage btreePageMgr[K], newPage btreePageMgr[K])
 }
 
@@ -277,37 +285,46 @@ type btreeIndex[K string | int] struct {
 	indexName string
 }
 
-func (bti *btreeIndex[K]) requestPage(pageId int) btreePageMgr[K] {
-	page, _ := bti.bufPool.FetchPage(pageId)
+func (bti *btreeIndex[K]) getBtreePage(page *storage.Page) btreePageMgr[K] {
 	page.Decode()
 	if page.GetDecodedBasePage().PageType == constants.InnerPageType {
 		innerPage := &btreeInnerPage[K]{
 			btreePage: btreePage[K]{
-				bp:                page.GetDecodedBasePage(),
-				additionalHeaders: make(map[string]int),
-				keys:              make([]K, 0),
-				values:            make([]*Value, 0),
-				brK:               bufferReader[K]{8}, // Adjust size based on K type
+				bp:                    page.GetDecodedBasePage(),
+				pageMetadatainterface: page,
+				additionalHeaders:     make(map[string]int),
+				keys:                  make([]K, 0),
+				values:                make([]*Value, 0),
+				brK:                   bufferReader[K]{8}, // Adjust size based on K type
 			},
 		}
+		innerPage.decode()
 		return innerPage
 	} else if page.GetDecodedBasePage().PageType == constants.LeafPageType {
 		leafPage := &btreeLeafPage[K]{
 			btreePage: btreePage[K]{
-				bp:                page.GetDecodedBasePage(),
-				additionalHeaders: make(map[string]int),
-				keys:              make([]K, 0),
-				values:            make([]*Value, 0),
-				brK:               bufferReader[K]{8}, // Adjust size based on K type
+				bp:                    page.GetDecodedBasePage(),
+				pageMetadatainterface: page,
+				additionalHeaders:     make(map[string]int),
+				keys:                  make([]K, 0),
+				values:                make([]*Value, 0),
+				brK:                   bufferReader[K]{8}, // Adjust size based on K type
 			},
 		}
+		leafPage.decode()
 		return leafPage
 	}
 	return nil
 }
+
+func (bti *btreeIndex[K]) requestPage(pageId int) btreePageMgr[K] {
+	page, _ := bti.bufPool.FetchPage(pageId)
+	return bti.getBtreePage(page)
+}
 func (bti *btreeIndex[K]) requestNewPage(pageType int) btreePageMgr[K] {
-	panic("Not Implemented requestNewPage")
-	return nil
+	//panic("Not Implemented requestNewPage")
+	page, _ := bti.bufPool.NewPage()
+	return bti.getBtreePage(page)
 }
 
 func (bti *btreeIndex[K]) resetPageMetaData(page btreePageMgr[K]) {
@@ -376,13 +393,13 @@ func (bti *btreeIndex[K]) insert(key K, presentPageId int, pageId int, slotId in
 		if backupPage != nil {
 			bti.insertTuple(key, initLeafPageValue(pageId, slotId), backupPage)
 		}
-
 		// *** add another method call to change the appropriate meta data
 		return
 	}
 }
 
 func (bti *btreeIndex[K]) insertTuple(key K, value *Value, page btreePageMgr[K]) {
+	page.getPageMetadataInterface().MarkDirty()
 	keys := page.getPageKeys()
 	vals := page.getPageValues()
 	if page.getPageType() == constants.InnerPageType {
@@ -526,4 +543,14 @@ func (bpage *btreePage[K]) higherBinarySearchKey(key K) (resIndex int) {
 		}
 	}
 	return resIndex
+}
+
+func getBtreeIndexMgr[K string | int]() btreeIndexMgr[K] {
+	return &btreeIndex[K]{
+		bufPool: storage.InitBuffPoolMgr(diskmgr.DiskFileInit{
+			DbFilePath:  "dbtest.db",
+			LogFilePath: "dblogtest.log",
+		}),
+		indexName: "btree",
+	}
 }
