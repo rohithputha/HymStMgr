@@ -444,6 +444,8 @@ func (bti *btreeIndex[K]) splitInnerPage(page btreePageMgr[K]) (newPageId int, s
 	newPage.setValues(valSplit1)
 	newPage.setAdditionalHeader("NextPtr", midVal.getValuePid())
 	bti.reDistributeChild(page, newPage.getPageId(), midKeyIndex)
+	page.setSize(len(keysSplit2))
+	newPage.setSize(len(keysSplit1))
 	return newPage.getPageId(), midKey
 }
 
@@ -466,15 +468,12 @@ func (bti *btreeIndex[K]) splitLeafPage(page btreePageMgr[K]) (newPageId int, sp
 	page.setValues(valsSplit2)
 	newPage.setKeys(keysSplit1)
 	newPage.setValues(valsSplit1)
-
-	//newPage.setAdditionalHeader("PrevPtr", page.get)
-
-	// fix this ...
-
-	// ** need to rewrite additional headers
-	// set parent header for inner page
-	// set leaf next and prev accordingly
-	// if leaf page changes to inner page -> create a new inner page if the leaf page parent is nil -> root leaf page
+	leafPageItr := bti.getIterator(page).(leafPageIterator[K])
+	newPage.setAdditionalHeader("PrevPtr", leafPageItr.prevSib())
+	newPage.setAdditionalHeader("NextPtr", page.getPageId())
+	page.setAdditionalHeader("PrevPtr", newPage.getPageId())
+	page.setSize(len(keysSplit2))
+	newPage.setSize(len(keysSplit1))
 	return newPage.getPageId(), keysSplit1[len(keysSplit1)-1]
 }
 

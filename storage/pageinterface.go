@@ -26,7 +26,7 @@ type Page struct {
 }
 
 type BasePage struct {
-	PageType     int //8bytes -> variable
+	PageType     int //8bytes
 	Lsn          int //8bytes
 	Size         int //8bytes -> variable
 	MaxSize      int //8bytes
