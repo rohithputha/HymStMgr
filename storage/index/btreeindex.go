@@ -94,6 +94,7 @@ type btreeLeafPage[K string | int] struct {
 
 type btreePageMgr[K string | int] interface {
 	decode()
+	//encode() // ** need to implement this
 	getPageType() int
 	getPageKeys() []K
 	getPageValues() []*Value
@@ -101,10 +102,21 @@ type btreePageMgr[K string | int] interface {
 	getSize() int
 	getParent() int
 	getPageId() int
+	//getIterator() interface{}
+
 	setKeys(keys []K)
 	setValues(values []*Value)
 	setSize(int)
 	setAdditionalHeader(string, int)
+}
+
+type btreeInnerPageMgr[K string | int] interface {
+	btreePageMgr[K]
+	getIterator() innerPageIterator[K]
+}
+type btreeLeafPageMgr[K string | int] interface {
+	btreePageMgr[K]
+	getIterator() leafPageIterator[K]
 }
 
 type leafPageIterator[K string | int] interface {
@@ -240,6 +252,14 @@ func (bi *btreeLeafPage[K]) decode() {
 	}
 }
 
+func (bi *btreeInnerPage[K]) getIterator() innerPageIterator[K] {
+	return bi
+}
+
+func (bi *btreeLeafPage[K]) getIterator() leafPageIterator[K] {
+	return bi
+}
+
 // ------------------------------------------------------------------------
 
 //	btree index logic
@@ -290,19 +310,6 @@ func (bti *btreeIndex[K]) requestNewPage(pageType int) btreePageMgr[K] {
 	return nil
 }
 
-func (bti *btreeIndex[K]) getIterator(page btreePageMgr[K]) interface{} {
-	switch page.getPageType() {
-	case constants.InnerPageType:
-		var innerPageIterator innerPageIterator[K] = page.(*btreeInnerPage[K])
-		return innerPageIterator
-	case constants.LeafPageType:
-		var leafPageIterator leafPageIterator[K] = page.(*btreeLeafPage[K])
-		return leafPageIterator
-	default:
-		return nil
-	}
-}
-
 func (bti *btreeIndex[K]) resetPageMetaData(page btreePageMgr[K]) {
 	page.setSize(len(page.getPageKeys()))
 
@@ -315,15 +322,15 @@ func (bti *btreeIndex[K]) search(key K) []*Value {
 	var leafPageItr leafPageIterator[K]
 	if page.getPageType() == constants.InnerPageType {
 		var ok = true
-		iterator := bti.getIterator(page)
+		iterator := page.(btreeInnerPageMgr[K]).getIterator()
 		innerPageItr, ok = iterator.(innerPageIterator[K])
 		for ok && innerPageItr.isNext() {
 			values, _, _ := innerPageItr.next(key)
 			page = bti.requestPage(values[0].getValuePid())
-			innerPageItr, ok = bti.getIterator(page).(innerPageIterator[K])
+			innerPageItr = page.(btreeInnerPageMgr[K]).getIterator()
 		}
 	}
-	leafPageItr, _ = bti.getIterator(page).(leafPageIterator[K]) // ** do we have to use ok and add an additional check for ok?
+	leafPageItr = page.(btreeLeafPageMgr[K]).getIterator() // ** do we have to use ok and add an additional check for ok?
 	values, _, foundKey, isInNextPage := leafPageItr.next(key)
 	if !foundKey {
 		return nil
@@ -331,7 +338,7 @@ func (bti *btreeIndex[K]) search(key K) []*Value {
 	var nextVals []*Value
 	for isInNextPage {
 		page = bti.requestPage(leafPageItr.nextSib())
-		leafPageItr, _ = bti.getIterator(page).(leafPageIterator[K])
+		leafPageItr = page.(btreeLeafPageMgr[K]).getIterator()
 		nextVals, _, foundKey, isInNextPage = leafPageItr.next(key)
 		if !foundKey {
 			break
@@ -351,7 +358,7 @@ func (bti *btreeIndex[K]) insert(key K, presentPageId int, pageId int, slotId in
 		page := bti.requestPage(stack[len(stack)-1].getValuePid())
 		stack = stack[:len(stack)-1]
 		if page.getPageType() == constants.InnerPageType {
-			innerPageItr := bti.getIterator(page).(innerPageIterator[K])
+			innerPageItr := page.(btreeInnerPageMgr[K]).getIterator()
 			values, _, _ := innerPageItr.next(key)
 			stack = append(stack, values...)
 		}
@@ -408,26 +415,23 @@ func (bti *btreeIndex[K]) iterativeSplit(page btreePageMgr[K]) {
 	var newPageId int
 	var splitKey K
 	if page.getPageType() == constants.InnerPageType {
-		newPageId, splitKey = bti.splitInnerPage(page)
+		newPageId, splitKey = bti.splitInnerPage(page.(btreeInnerPageMgr[K]))
 		// when the inner page is split we need to take care of the change in the parent pointers of the child pages
 	} else if page.getPageType() == constants.LeafPageType {
 		// when the leaf page is split, we need to make sure that the next and prev pointers are set correctly
-		newPageId, splitKey = bti.splitLeafPage(page)
+		newPageId, splitKey = bti.splitLeafPage(page.(btreeLeafPageMgr[K]))
 	}
-
 	var parentPage btreePageMgr[K]
 	if page.getParent() == -1 {
 		parentPage = bti.requestNewPage(constants.InnerPageType) // request New page should also take the parentId as an input?
-		//bti.insertTuple(page.getPageKeys()[len(page.getPageKeys())-1], initInnerPageValue(page.getPageId()), parentPage)
 		parentPage.setAdditionalHeader("NextPtr", page.getPageId())
 	} else {
 		parentPage = bti.requestPage(page.getParent())
 	}
-
 	bti.insertTuple(splitKey, initInnerPageValue(newPageId), parentPage)
 }
 
-func (bti *btreeIndex[K]) splitInnerPage(page btreePageMgr[K]) (newPageId int, splitKey K) {
+func (bti *btreeIndex[K]) splitInnerPage(page btreeInnerPageMgr[K]) (newPageId int, splitKey K) {
 	newPage := bti.requestNewPage(page.getPageType())
 	keys := page.getPageKeys()
 	values := page.getPageValues()
@@ -456,7 +460,7 @@ func (bti *btreeIndex[K]) reDistributeChild(oldPage btreePageMgr[K], newPageId i
 	}
 }
 
-func (bti *btreeIndex[K]) splitLeafPage(page btreePageMgr[K]) (newPageId int, splitKey K) {
+func (bti *btreeIndex[K]) splitLeafPage(page btreeLeafPageMgr[K]) (newPageId int, splitKey K) {
 	newPage := bti.requestNewPage(page.getPageType()) // check the above comment?
 	keys := page.getPageKeys()
 	vals := page.getPageValues()
@@ -468,7 +472,7 @@ func (bti *btreeIndex[K]) splitLeafPage(page btreePageMgr[K]) (newPageId int, sp
 	page.setValues(valsSplit2)
 	newPage.setKeys(keysSplit1)
 	newPage.setValues(valsSplit1)
-	leafPageItr := bti.getIterator(page).(leafPageIterator[K])
+	leafPageItr := page.getIterator()
 	newPage.setAdditionalHeader("PrevPtr", leafPageItr.prevSib())
 	newPage.setAdditionalHeader("NextPtr", page.getPageId())
 	page.setAdditionalHeader("PrevPtr", newPage.getPageId())
