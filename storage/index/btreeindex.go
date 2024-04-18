@@ -45,12 +45,6 @@ func (br customBufferReader[T]) nextInt16(buffer *bytes.Buffer) int16 {
 	return n
 }
 
-/*
-*************************************************
-*	B+ tree base page logic and data access
-*************************************************
- */
-
 type Value struct {
 	pageId int
 	slotId int16
@@ -76,6 +70,12 @@ func (v *Value) getValuePid() int {
 func (v *Value) getValueSid() int16 {
 	return v.slotId
 }
+
+/*
+*************************************************
+*	B+ tree base page logic and data access
+*************************************************
+ */
 
 type btreePage[K string | int] struct {
 	bp                *storage.BasePage
@@ -419,6 +419,93 @@ func (bpage *btreeInnerPage[K]) upperBoundSearch(key K) (*Value, int) {
 }
 
 /*
+*************************************************
+Leaf values iterator
+*************************************************
+*/
+
+type iterator[K string | int] interface {
+	requestPage(pageId int) btreeLeafPageMgr[K]
+	next() (val *Value)
+	prev() (val *Value)
+	present() (pageId int, index int)
+}
+type coreIterator[K string | int] struct {
+	bufPool     *storage.BuffPoolMgrStr
+	leafPage    btreeLeafPageMgr[K]
+	leafPageNav leafPageDataNavigator[K]
+}
+type iteratorState[K string | int] struct {
+	coreIterator[K]
+	pageId int
+	index  int
+}
+
+func (lState *iteratorState[K]) next() *Value {
+	if lState.index == lState.leafPage.getSize()-1 {
+		lState.pageId = lState.leafPageNav.nextSib()
+		if lState == nil || lState.pageId == -1 {
+			return nil
+		}
+		lState.leafPage = lState.requestPage(lState.pageId)
+		lState.leafPageNav = lState.leafPage.getIterator()
+		lState.index = 0
+	} else {
+		lState.index++
+	}
+	return lState.leafPage.getValue(lState.index)
+}
+
+func (lState *iteratorState[K]) prev() *Value {
+	if lState.index == 0 {
+		lState.pageId = lState.leafPageNav.prevSib()
+		if lState == nil || lState.pageId == -1 {
+			return nil
+		}
+		lState.leafPage = lState.requestPage(lState.pageId)
+		lState.leafPageNav = lState.leafPage.getIterator()
+		lState.index = lState.leafPage.getSize() - 1
+	} else {
+		lState.index--
+	}
+	return lState.leafPage.getValue(lState.index)
+}
+
+func (lState *iteratorState[K]) present() (int, int) {
+	return lState.pageId, lState.index
+}
+
+func (lState *iteratorState[K]) requestPage(pageId int) btreeLeafPageMgr[K] {
+	page, readError := lState.bufPool.FetchPage(pageId)
+	if readError != nil {
+		return nil
+	}
+	page.Decode()
+	if page.GetDecodedBasePage().PageId == constants.InnerPageType {
+		return nil
+	}
+	leafPage := &btreeLeafPage[K]{
+		btreePage: btreePage[K]{
+			bp:                page.GetDecodedBasePage(),
+			bpMgr:             page,
+			additionalHeaders: make(map[string]int),
+			keys:              make([]K, 0),
+			values:            make([]*Value, 0),
+			brK:               customBufferReader[K]{8}, // Adjust size based on K type
+		},
+	}
+	leafPage.decode()
+	return leafPage
+}
+
+func getIterator[K string | int](page btreeLeafPageMgr[K], bufPool *storage.BuffPoolMgrStr, index int) iterator[K] {
+	return &iteratorState[K]{
+		coreIterator[K]{bufPool, page, page.getIterator()},
+		page.getPageId(),
+		index}
+}
+
+/*
 ********************************************************************
 	B+ tree index logic
 ********************************************************************
@@ -429,6 +516,7 @@ type btreeIndexMgr[K string | int] interface {
 	requestNewPage(pageType int) btreePageMgr[K]
 	insert(key K, presentPageId int, pageId int, slotId int16)
 	search(key K) []*Value // simple search
+	rangeSearch(lKey K, rKey K) []*Value
 }
 
 type btreeIndex[K string | int] struct {
@@ -512,6 +600,46 @@ func (bti *btreeIndex[K]) search(key K) []*Value {
 			break
 		}
 		values = append(values, nextVals...) // do we return a copy of the values
+	}
+	return values
+}
+
+func (bti *btreeIndex[K]) rangeSearch(lKey K, rKey K) []*Value {
+	rootPageId := bti.getRootPageId()
+	rootPage := bti.requestPage(rootPageId)
+	lpage := rootPage
+	rpage := rootPage
+	var innerPageNav innerPageDataNavigator[K]
+	if lpage.getPageType() == constants.InnerPageType {
+		var ok = true
+		iterator := lpage.(btreeInnerPageMgr[K]).getIterator()
+		innerPageNav, ok = iterator.(innerPageDataNavigator[K])
+		for ok && innerPageNav.isNext() {
+			value, _ := innerPageNav.lowerBoundSearch(lKey)
+			lpage = bti.requestPage(value.getValuePid())
+			innerPageNav = rpage.(btreeInnerPageMgr[K]).getIterator() // this might give an error at casting....
+		}
+	}
+	if rpage.getPageType() == constants.InnerPageType {
+		var ok = true
+		iterator := rpage.(btreeInnerPageMgr[K]).getIterator()
+		innerPageNav, ok = iterator.(innerPageDataNavigator[K])
+		for ok && innerPageNav.isNext() {
+			value, _ := innerPageNav.upperBoundSearch(rKey)
+			rpage = bti.requestPage(value.getValuePid())
+			innerPageNav = rpage.(btreeInnerPageMgr[K]).getIterator() // this might give an error at casting....
+		}
+	}
+	leftLeafPageNav := lpage.(btreeLeafPageMgr[K]).getIterator()
+	rightLeafPageNav := rpage.(btreeLeafPageMgr[K]).getIterator()
+	_, lIndex := leftLeafPageNav.lowerBoundSearch(lKey)
+	_, rIndex := rightLeafPageNav.upperBoundSearch(rKey)
+	values := make([]*Value, 0)
+	iterator := getIterator[K](lpage.(btreeLeafPageMgr[K]), bti.bufPool, lIndex)
+	presentPageId, presentIndex := iterator.present()
+	for presentPageId != rpage.getPageId() || presentIndex != rIndex {
+		values = append(values, iterator.next())
+		presentPageId, presentIndex = iterator.present()
 	}
 	return values
 }
