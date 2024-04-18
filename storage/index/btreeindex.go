@@ -630,6 +630,8 @@ func (bti *btreeIndex[K]) rangeSearch(lKey K, rKey K) []*Value {
 			innerPageNav = rpage.(btreeInnerPageMgr[K]).getIterator() // this might give an error at casting....
 		}
 	}
+	// why is the second range search required?
+	// we can just do a search on the left page and then keep on traversing the next pointers until we reach the right page? WIP...
 	leftLeafPageNav := lpage.(btreeLeafPageMgr[K]).getIterator()
 	rightLeafPageNav := rpage.(btreeLeafPageMgr[K]).getIterator()
 	_, lIndex := leftLeafPageNav.lowerBoundSearch(lKey)
@@ -804,7 +806,7 @@ func (bti *btreeIndex[K]) deleteTuple(index int, page btreeLeafPageMgr[K]) {
 func (bti *btreeIndex[K]) Merge(page btreeLeafPageMgr[K]) {
 	borrowSuccess := bti.borrowFromLeafSib(page)
 	if !borrowSuccess {
-		bti.mergeLeaf(page)
+		bti.mergeLeaf(page, bti.requestPage(page.getIterator().nextSib()).(btreeLeafPageMgr[K]))
 	}
 }
 
@@ -849,20 +851,27 @@ func (bti *btreeIndex[K]) borrowLeaf(leftLeafPage btreePageMgr[K], rightLeafPage
 	leftParent.setValues(leftParentValues)
 }
 
-func (bti *btreeIndex[K]) mergeLeaf(page btreeLeafPageMgr[K]) {
-	// W . I . P
-	leftLeafPage := bti.requestPage(page.getIterator().prevSib())
-	rightLeafPage := bti.requestPage(page.getIterator().nextSib())
-	leftLeafPageKeys := leftLeafPage.getPageKeys()
-	leftLeafPageValues := leftLeafPage.getPageValues()
-	rightLeafPageKeys := rightLeafPage.getPageKeys()
-	rightLeafPageValues := rightLeafPage.getPageValues()
-	leftLeafPageKeys = append(leftLeafPageKeys, rightLeafPageKeys...)
-	leftLeafPageValues = append(leftLeafPageValues, rightLeafPageValues...)
-	leftLeafPage.setKeys(leftLeafPageKeys)
-	leftLeafPage.setValues(leftLeafPageValues)
-	//leftLeafPage.setAdditionalHeader("NextPtr", rightLeafPage.getIterator().nextSib())
-	//bti.deleteTuple(page.getPageKeys()[0], page)
+func (bti *btreeIndex[K]) mergeLeaf(mainPage btreeLeafPageMgr[K], sibPage btreeLeafPageMgr[K]) {
+	mainPageKeys := mainPage.getPageKeys()
+	mainPageValues := mainPage.getPageValues()
+	sibPageKeys := sibPage.getPageKeys()
+	sibPageValues := sibPage.getPageValues()
+	mainPageKeys = append(mainPageKeys, sibPageKeys...)
+	mainPageValues = append(mainPageValues, sibPageValues...)
+	mainPage.setKeys(mainPageKeys)
+	mainPage.setValues(mainPageValues)
+	mainPage.setAdditionalHeader("NextPtr", sibPage.getIterator().nextSib())
+	//bti.deleteTuple(sibPage.getPageId(), bti.requestPage(sibPage.getIterator().parent())) -> this triggers a recursive delete and merge. avoided for now... noted as an issue
+	// just a normal delete on the parent is performed
+	sibParent := bti.requestPage(sibPage.getParent())
+	sibParentKeys := sibParent.getPageKeys()
+	sibParentValues := sibParent.getPageValues()
+	for i := 0; i < len(sibParentKeys); i++ {
+		if sibParentValues[i].getValuePid() == sibPage.getPageId() {
+			sibParent.deleteKey(i)
+			sibParent.deleteValue(i)
+		}
+	}
 }
 
 // -------------------------------------------------------------------------
