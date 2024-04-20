@@ -13,30 +13,30 @@ import (
 // should it store info based on pageIndex or PageId? maybe go with pageIndex: will be easy on memory but not accurate I feel.
 
 type ReplPol interface {
-	initPageLruk(pageIndex int)
-	addPageTime(pageIndex int, timestamp int64) (err error)
-	findReplPage(timestamp int64, excludedPages utils.ISet[int]) (pageIndex int)
+	initPageLruk(pageIndex int64)
+	addPageTime(pageIndex int64, timestamp int64) (err error)
+	findReplPage(timestamp int64, excludedPages utils.ISet[int64]) (pageIndex int64)
 }
 
 type lruk struct {
-	pageHistMap     map[int](utils.IQueue[int64])
-	pageLastTimeMap map[int]int64
+	pageHistMap     map[int64](utils.IQueue[int64])
+	pageLastTimeMap map[int64]int64
 }
 
 func getLrukReplPol() ReplPol {
 	lruk := lruk{
-		pageHistMap:     make(map[int]utils.IQueue[int64]),
-		pageLastTimeMap: make(map[int]int64),
+		pageHistMap:     make(map[int64]utils.IQueue[int64]),
+		pageLastTimeMap: make(map[int64]int64),
 	}
 	return &lruk
 }
 
-func (l *lruk) initPageLruk(pageIndex int) {
+func (l *lruk) initPageLruk(pageIndex int64) {
 	l.pageHistMap[pageIndex] = utils.GetNewQueue[int64](4)
 	l.pageLastTimeMap[pageIndex] = int64(0)
 }
 
-func (l *lruk) addPageTime(pageIndex int, timestamp int64) (err error) {
+func (l *lruk) addPageTime(pageIndex int64, timestamp int64) (err error) {
 	// is 5000 correct? 5000 units of the time, what is the unit here?
 	// should there be a locking mechanism here?
 	if timestamp-l.pageLastTimeMap[pageIndex] > 500 {
@@ -64,9 +64,9 @@ func (l *lruk) addPageTime(pageIndex int, timestamp int64) (err error) {
 	return nil
 }
 
-func (l *lruk) findReplPage(timestamp int64, excludedPages utils.ISet[int]) (pageIndex int) {
+func (l *lruk) findReplPage(timestamp int64, excludedPages utils.ISet[int64]) (pageIndex int64) {
 	minTime := timestamp
-	victim := -1
+	victim := int64(-1)
 	for pageIndex, timeQueue := range l.pageHistMap {
 		if excludedPages.Contains(pageIndex) {
 			continue
@@ -76,7 +76,7 @@ func (l *lruk) findReplPage(timestamp int64, excludedPages utils.ISet[int]) (pag
 			continue
 		}
 		if timestamp-l.pageLastTimeMap[pageIndex] > 500 && kQueueEle < minTime {
-			victim = pageIndex
+			victim = int64(pageIndex)
 			minTime = kQueueEle
 		}
 	}

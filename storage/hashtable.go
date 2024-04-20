@@ -9,38 +9,38 @@ import (
 	"sync"
 )
 
-type HashTableMgr[K string | int, V any] interface {
+type HashTableMgr[K string | int64, V any] interface {
 	Find(key K) (v []*V)
 	Insert(key K, v *V)
 	Remove(key K)
 }
 
-type ExtensibleHashTableMgr[K string | int, V any] interface {
+type ExtensibleHashTableMgr[K string | int64, V any] interface {
 	HashTableMgr[K, V]
-	GetGlobalDepth() int
-	GetLocalDepth(index int) int
-	GetNumBuckets() int
+	GetGlobalDepth() int64
+	GetLocalDepth(index int64) int64
+	GetNumBuckets() int64
 }
-type ExtensibleHashTable[K string | int, V any] struct {
+type ExtensibleHashTable[K string | int64, V any] struct {
 	hashTable   []*bucket[K, V]
-	globalDepth int
+	globalDepth int64
 	htMux       *sync.RWMutex
 }
 
-type kvPair[K string | int, V any] struct {
-	hash int
+type kvPair[K string | int64, V any] struct {
+	hash int64
 	key  K
 	val  *V
 }
 
-type bucket[K string | int, V any] struct {
-	hash        int
-	localDepth  int
+type bucket[K string | int64, V any] struct {
+	hash        int64
+	localDepth  int64
 	bucketArray []*kvPair[K, V]
 	keySet      utils.ISet[K]
 }
 
-func GetExtensibleHashTable[K string | int, V any]() ExtensibleHashTableMgr[K, V] {
+func GetExtensibleHashTable[K string | int64, V any]() ExtensibleHashTableMgr[K, V] {
 	initHashTable := []*bucket[K, V]{getNewBucket[K, V](0, 1), getNewBucket[K, V](1, 1)}
 	return &ExtensibleHashTable[K, V]{
 		hashTable:   initHashTable,
@@ -49,7 +49,7 @@ func GetExtensibleHashTable[K string | int, V any]() ExtensibleHashTableMgr[K, V
 	}
 }
 
-func getHashValue[K string | int](key K, depth int) int {
+func getHashValue[K string | int64](key K, depth int64) int64 {
 	digest := xxhash.Digest{}
 	_, digErr := digest.WriteString(fmt.Sprint(key))
 	hashVal := digest.Sum64()
@@ -57,17 +57,17 @@ func getHashValue[K string | int](key K, depth int) int {
 		return -1
 	}
 	mask := (1 << depth) - 1
-	return int(hashVal) & mask // is this an issue?
+	return int64(hashVal) & int64(mask) // is this an issue?
 }
 
-func getNewBucket[K string | int, V any](hash int, localDepth int) *bucket[K, V] {
+func getNewBucket[K string | int64, V any](hash int64, localDepth int64) *bucket[K, V] {
 	return &bucket[K, V]{hash: hash, localDepth: localDepth, bucketArray: make([]*kvPair[K, V], 0), keySet: utils.GetNewSet[K]()}
 }
 
 func (eh *ExtensibleHashTable[K, V]) newHashTable(fullBucket *bucket[K, V]) {
-	newHashTable := make([]*bucket[K, V], int(math.Pow(2, float64(eh.globalDepth+1))))
+	newHashTable := make([]*bucket[K, V], int64(math.Pow(2, float64(eh.globalDepth+1))))
 	for oldHash, bucket := range eh.hashTable {
-		if oldHash == fullBucket.hash {
+		if int64(oldHash) == fullBucket.hash {
 			continue
 		}
 		newHash1 := oldHash << 1
@@ -139,24 +139,24 @@ func (eh *ExtensibleHashTable[K, V]) Remove(key K) {
 	}
 }
 
-func (eh *ExtensibleHashTable[K, V]) GetGlobalDepth() int {
+func (eh *ExtensibleHashTable[K, V]) GetGlobalDepth() int64 {
 	eh.htMux.RLock()
 	defer eh.htMux.RUnlock()
 	return eh.globalDepth
 }
 
-func (eh *ExtensibleHashTable[K, V]) GetLocalDepth(index int) int {
+func (eh *ExtensibleHashTable[K, V]) GetLocalDepth(index int64) int64 {
 	eh.htMux.RLock()
 	defer eh.htMux.RUnlock()
 	return eh.hashTable[index].localDepth
 }
 
-func (eh *ExtensibleHashTable[K, V]) GetNumBuckets() int {
+func (eh *ExtensibleHashTable[K, V]) GetNumBuckets() int64 {
 	eh.htMux.RLock()
 	defer eh.htMux.RUnlock()
 	set := utils.GetNewSet[*bucket[K, V]]()
 	for _, bucketPointer := range eh.hashTable {
 		set.Add(bucketPointer)
 	}
-	return set.GetSize()
+	return int64(set.GetSize())
 }

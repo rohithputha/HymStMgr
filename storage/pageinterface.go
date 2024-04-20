@@ -11,12 +11,12 @@ import (
 
 var headersOrder []string = []string{"PageType", "Lsn", "Size", "MaxSize", "ParentPageId", "PageId"}
 
-const basePageHeaderByteSize = 8 * 6 //6 const headers (int) with 8 bytes each
+const basePageHeaderByteSize = 8 * 6 //6 const headers (int64) with 8 bytes each
 
 type Page struct {
-	PageId      int
+	PageId      int64
 	pageData    [constants.PageSize]byte // this will be a copy of page data
-	Pin         int
+	Pin         int64
 	IsDirty     bool
 	IsFlushed   bool
 	IsCorrupted bool
@@ -31,17 +31,17 @@ type PageInterface interface {
 }
 
 type BasePage struct {
-	PageType     int //8bytes
-	Lsn          int //8bytes
-	Size         int //8bytes -> variable
-	MaxSize      int //8bytes
-	ParentPageId int //8bytes -> variable
-	PageId       int //8bytes
+	PageType     int64 //8bytes
+	Lsn          int64 //8bytes
+	Size         int64 //8bytes -> variable
+	MaxSize      int64 //8bytes
+	ParentPageId int64 //8bytes -> variable
+	PageId       int64 //8bytes
 	DataArea     []byte
 }
 
-func bytesIntegerConv(buffer *bytes.Buffer) int {
-	var n int
+func bytesIntegerConv(buffer *bytes.Buffer) int64 {
+	var n int64
 	err := binary.Read(buffer, binary.BigEndian, &n)
 	if err != nil {
 		panic(err)
@@ -62,7 +62,7 @@ func getByteBuffer(b []byte) *bytes.Buffer {
 	return bytes.NewBuffer(b)
 }
 
-func (p *Page) decodeHeaders() (totalDecodeLength int) {
+func (p *Page) decodeHeaders() (totalDecodeLength int64) {
 	p.pageMux.RLock()
 	defer p.pageMux.RUnlock()
 	headerBuffer := getByteBuffer(p.pageData[:])
@@ -85,7 +85,7 @@ func (p *Page) decodeHeaders() (totalDecodeLength int) {
 	return basePageHeaderByteSize
 }
 
-func integerBytesConv(d int) []byte {
+func integerBytesConv(d int64) []byte {
 	buf := new(bytes.Buffer)
 	err := binary.Write(buf, binary.BigEndian, d)
 	if err != nil {
@@ -147,7 +147,7 @@ func (p *Page) Encode() (encodeErr error) {
 	p.pageMux.Lock()
 	defer p.pageMux.Unlock()
 	headerBytes := p.encodeHeaders()
-	if len(p.bp.DataArea) != constants.PageSize-basePageHeaderByteSize {
+	if int64(len(p.bp.DataArea)) != constants.PageSize-basePageHeaderByteSize {
 		return errors.New("DataArea not required Size. encode page failed")
 	}
 	p.pageData = [4096]byte(append(headerBytes, p.bp.DataArea...)) // should pageData have another allocation or he the data copied to it manually maintaining the same array loc?

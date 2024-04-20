@@ -16,8 +16,8 @@ func TestLrukReplPolInit(test *testing.T) {
 
 func TestLrukReplPolPageInit(test *testing.T) {
 	lruk := lruk{
-		pageHistMap:     make(map[int]utils.IQueue[int64]),
-		pageLastTimeMap: make(map[int]int64),
+		pageHistMap:     make(map[int64]utils.IQueue[int64]),
+		pageLastTimeMap: make(map[int64]int64),
 	}
 	lruk.initPageLruk(0)
 	if len(lruk.pageHistMap) != 1 {
@@ -30,8 +30,8 @@ func TestLrukReplPolPageInit(test *testing.T) {
 
 func TestLrukAddTime(test *testing.T) {
 	lruk := lruk{
-		pageHistMap:     make(map[int]utils.IQueue[int64]),
-		pageLastTimeMap: make(map[int]int64),
+		pageHistMap:     make(map[int64]utils.IQueue[int64]),
+		pageLastTimeMap: make(map[int64]int64),
 	}
 	lruk.initPageLruk(0)
 
@@ -43,8 +43,8 @@ func TestLrukAddTime(test *testing.T) {
 
 func TestLrukAddTimeMulti(test *testing.T) {
 	lruk := lruk{
-		pageHistMap:     make(map[int]utils.IQueue[int64]),
-		pageLastTimeMap: make(map[int]int64),
+		pageHistMap:     make(map[int64]utils.IQueue[int64]),
+		pageLastTimeMap: make(map[int64]int64),
 	}
 	lruk.initPageLruk(0)
 	lruk.addPageTime(0, time.Now().UnixNano()/int64(time.Millisecond))
@@ -58,8 +58,8 @@ func TestLrukAddTimeMulti(test *testing.T) {
 
 func TestLrukAddTimeMultiCorrPeriod(test *testing.T) {
 	lruk := lruk{
-		pageHistMap:     make(map[int]utils.IQueue[int64]),
-		pageLastTimeMap: make(map[int]int64),
+		pageHistMap:     make(map[int64]utils.IQueue[int64]),
+		pageLastTimeMap: make(map[int64]int64),
 	}
 	lruk.initPageLruk(0)
 	lruk.addPageTime(0, time.Now().UnixNano()/int64(time.Millisecond))
@@ -78,8 +78,8 @@ func TestLrukAddTimeMultiCorrPeriod(test *testing.T) {
 
 func TestLrukFindReplPage(test *testing.T) {
 	lruk := lruk{
-		pageHistMap:     make(map[int]utils.IQueue[int64]),
-		pageLastTimeMap: make(map[int]int64),
+		pageHistMap:     make(map[int64]utils.IQueue[int64]),
+		pageLastTimeMap: make(map[int64]int64),
 	}
 	lruk.initPageLruk(0)
 	lruk.initPageLruk(1)
@@ -92,7 +92,7 @@ func TestLrukFindReplPage(test *testing.T) {
 	lruk.pageLastTimeMap[0] = 2520
 	lruk.pageLastTimeMap[1] = 2510
 
-	replPageIndex := lruk.findReplPage(3530, utils.GetNewSet[int]())
+	replPageIndex := lruk.findReplPage(3530, utils.GetNewSet[int64]())
 	if replPageIndex != 1 {
 		test.Errorf("lruk find repl page not working as expected")
 	}
