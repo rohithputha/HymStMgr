@@ -154,11 +154,16 @@ func (p *Page) Encode() (encodeErr error) {
 	return nil
 }
 
-func (ps *Page) NewPage() {
-	for i := range ps.pageData {
-		ps.pageData[i] = 0
-	}
-	ps.pageData[0] = 1
+func (ps *Page) NewPage(pageId int64, pageType int64) {
+	ps.pageMux.Lock()
+	defer ps.pageMux.Unlock()
+	ps.PageId = pageId
+	ps.IsDirty = true
+	ps.IsFlushed = false
+	ps.IsCorrupted = false
+	ps.IsOccupied = true
+	ps.Pin = 0
+	ps.bp = &BasePage{PageId: pageId, Size: 0, DataArea: make([]byte, constants.PageSize-basePageHeaderByteSize), PageType: pageType}
 }
 
 func (p *Page) GetDecodedBasePage() *BasePage {

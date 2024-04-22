@@ -123,7 +123,7 @@ func (bp *BuffPoolMgrStr) allocatePageId() (pageId int64) {
 	return bp.diskMgr.GetPageCount()
 }
 
-func (bp *BuffPoolMgrStr) NewPage() (page *Page, newPageErr error) {
+func (bp *BuffPoolMgrStr) NewPage(pageType int64) (page *Page, newPageErr error) {
 	bp.bpsMux.Lock()
 	defer bp.bpsMux.Unlock()
 
@@ -133,7 +133,7 @@ func (bp *BuffPoolMgrStr) NewPage() (page *Page, newPageErr error) {
 		return nil, sErr
 	}
 	bp.replPol.initPageLruk(sPageIndex)
-	sPage.NewPage()
+	sPage.NewPage(newPageId, pageType)
 	writeErr := bp.diskMgr.WritePage(newPageId, sPage.pageData[:])
 	if writeErr != nil {
 		return nil, writeErr

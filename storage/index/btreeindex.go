@@ -3,13 +3,14 @@ package index
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"github.com/rohithputha/HymStMgr/constants"
 	"github.com/rohithputha/HymStMgr/diskmgr"
 	"github.com/rohithputha/HymStMgr/storage"
 )
 
-var btreeInnerPageHeaders = []string{"TotalKV", "ParentId", "NextPtr"}
-var btreeLeafPageHeaders = []string{"TotalKV", "ParentId", "PrevPtr", "NextPtr"}
+var btreeInnerPageHeaders = []string{"MaxKV", "TotalKV", "ParentId", "NextPtr"}
+var btreeLeafPageHeaders = []string{"MaxKV", "TotalKV", "ParentId", "PrevPtr", "NextPtr"}
 
 type customBufferReader[T string | int64] struct {
 	numBytesPerCustomRead int64
@@ -97,18 +98,12 @@ type btreeMetaDataAccess[K string | int64] interface {
 
 	// experiment
 	// have all the key access methods in the interface so that we can keep track of marking the page dirty
-	getKey(index int64) K
-	getValue(index int64) *Value
-	setKey(index int64, key K)
-	setValue(index int64, value *Value)
-	addKey(index int64, key K)
-	addValue(index int64, value *Value)
-	deleteKey(index int64)
-	deleteValue(index int64)
-	updateKey(index int64, key K)
-	updateValue(index int64, value *Value)
-	appendKey(key K)
-	appendValue(value *Value)
+	getKV(index int64) (K, *Value, error)
+	setKV(index int64, key K, value *Value)
+	addKV(index int64, key K, value *Value)
+	deleteKV(index int64)
+	updateKV(index int64, key K, value *Value)
+	appendKV(key K, value *Value)
 	splitKVs(fn func(*btreePage[K]) ([]K, []*Value, K, *Value, int64)) ([]K, []*Value, K, *Value, int64)
 	// end experiment
 
@@ -133,74 +128,49 @@ func (bpage *btreePage[K]) setValues(values []*Value) {
 	bpage.values = values
 }
 
-func (bpage *btreePage[K]) setKey(index int64, key K) {
+func (bpage *btreePage[K]) setKV(index int64, key K, value *Value) {
 	bpage.bpMgr.MarkDirty()
 	bpage.keys[index] = key
-}
-func (bpage *btreePage[K]) setValue(index int64, value *Value) {
-	bpage.bpMgr.MarkDirty()
 	bpage.values[index] = value
 }
 
-func (bpage *btreePage[K]) addKey(index int64, key K) {
+func (bpage *btreePage[K]) addKV(index int64, key K, value *Value) {
 	bpage.bpMgr.MarkDirty()
 	if index <= 0 {
 		bpage.keys = append([]K{key}, bpage.keys...)
+		bpage.values = append([]*Value{value}, bpage.values...)
 	} else if index >= int64(len(bpage.keys)) {
 		bpage.keys = append(bpage.keys, key)
-	} else {
-		bpage.keys = append(bpage.keys[:index], append([]K{key}, bpage.keys[index:]...)...)
-	}
-}
-
-func (bpage *btreePage[K]) addValue(index int64, value *Value) {
-	bpage.bpMgr.MarkDirty()
-	if index <= 0 {
-		bpage.values = append([]*Value{value}, bpage.values...)
-	} else if index >= int64(len(bpage.values)) {
 		bpage.values = append(bpage.values, value)
 	} else {
+		bpage.keys = append(bpage.keys[:index], append([]K{key}, bpage.keys[index:]...)...)
 		bpage.values = append(bpage.values[:index], append([]*Value{value}, bpage.values[index:]...)...)
 	}
+	bpage.setSize(int64(len(bpage.keys)))
 }
-func (bpage *btreePage[K]) deleteKey(index int64) {
-	bpage.bpMgr.MarkDirty()
+
+func (bpage *btreePage[K]) deleteKV(index int64) {
 	if index < 0 || index >= int64(len(bpage.keys)) {
 		return
 	}
+	bpage.bpMgr.MarkDirty()
 	bpage.keys = append(bpage.keys[:index], bpage.keys[index+1:]...)
-}
-
-func (bpage *btreePage[K]) deleteValue(index int64) {
-	bpage.bpMgr.MarkDirty()
-	if index < 0 || index >= int64(len(bpage.values)) {
-		return
-	}
 	bpage.values = append(bpage.values[:index], bpage.values[index+1:]...)
+	bpage.setSize(int64(len(bpage.keys)))
 }
 
-func (bpage *btreePage[K]) updateKey(index int64, key K) {
-	bpage.bpMgr.MarkDirty()
+func (bpage *btreePage[K]) updateKV(index int64, key K, value *Value) {
 	if index < 0 || index >= int64(len(bpage.keys)) {
 		return
 	}
-	bpage.keys[index] = key
-}
-
-func (bpage *btreePage[K]) updateValue(index int64, value *Value) {
 	bpage.bpMgr.MarkDirty()
-	if index < 0 || index >= int64(len(bpage.values)) {
-		return
-	}
+	bpage.keys[index] = key
 	bpage.values[index] = value
 }
 
-func (bpage *btreePage[K]) appendKey(key K) {
+func (bpage *btreePage[K]) appendKV(key K, value *Value) {
 	bpage.bpMgr.MarkDirty()
 	bpage.keys = append(bpage.keys, key)
-}
-func (bpage *btreePage[K]) appendValue(value *Value) {
-	bpage.bpMgr.MarkDirty()
 	bpage.values = append(bpage.values, value)
 }
 
@@ -210,7 +180,7 @@ func (bpage *btreePage[K]) splitKVs(fn func(page *btreePage[K]) ([]K, []*Value, 
 }
 
 func (bpage *btreePage[K]) setSize(newSize int64) {
-	bpage.bp.Size = newSize
+	bpage.additionalHeaders["totalKV"] = newSize
 }
 func (bpage *btreePage[K]) setAdditionalHeader(key string, value int64) {
 	// ** additional check to make sure the key is present in the additional headers
@@ -218,10 +188,10 @@ func (bpage *btreePage[K]) setAdditionalHeader(key string, value int64) {
 }
 
 func (bpage *btreePage[K]) getMaxSize() int64 {
-	return bpage.bp.MaxSize
+	return bpage.additionalHeaders["MaxKV"]
 }
 func (bpage *btreePage[K]) getSize() int64 {
-	return bpage.bp.Size
+	return bpage.additionalHeaders["totalKV"]
 }
 
 func (bpage *btreePage[K]) getPageType() int64 {
@@ -235,15 +205,16 @@ func (bpage *btreePage[K]) getPageKeys() []K {
 func (bpage *btreePage[K]) getPageValues() []*Value {
 	return bpage.values
 }
-func (bpage *btreePage[K]) getKey(index int64) K {
-	return bpage.keys[index]
-}
-func (bpage *btreePage[K]) getValue(index int64) *Value {
-	return bpage.values[index]
+func (bpage *btreePage[K]) getKV(index int64) (K, *Value, error) {
+	if index < 0 || index >= int64(len(bpage.keys)) {
+		var k K
+		return k, nil, errors.New("Index out of range")
+	}
+	return bpage.keys[index], bpage.values[index], nil
 }
 
 func (bpage *btreePage[K]) getParent() int64 {
-	return bpage.bp.ParentPageId
+	return bpage.additionalHeaders["ParentId"]
 }
 func (bpage *btreePage[K]) getPageId() int64 {
 	return bpage.bp.PageId
@@ -283,6 +254,7 @@ func (bpage *btreeLeafPage[K]) decode() {
 	for _, v := range btreeLeafPageHeaders {
 		bpage.additionalHeaders[v] = bpage.brK.nextInt64(buffer)
 	}
+
 	// it is assumed that the all the struct elements are declared and made...
 	for i := int64(0); i < bpage.additionalHeaders["TotalKV"]; i++ {
 		bpage.keys = append(bpage.keys, bpage.brK.next(buffer))
@@ -453,7 +425,12 @@ func (lState *iteratorState[K]) next() *Value {
 	} else {
 		lState.index++
 	}
-	return lState.leafPage.getValue(lState.index)
+	if _, value, err := lState.leafPage.getKV(lState.index); err != nil {
+		return nil
+	} else {
+		return value
+	}
+
 }
 
 func (lState *iteratorState[K]) prev() *Value {
@@ -468,7 +445,12 @@ func (lState *iteratorState[K]) prev() *Value {
 	} else {
 		lState.index--
 	}
-	return lState.leafPage.getValue(lState.index)
+
+	if _, value, err := lState.leafPage.getKV(lState.index); err != nil {
+		return nil
+	} else {
+		return value
+	}
 }
 
 func (lState *iteratorState[K]) present() (int64, int64) {
@@ -524,51 +506,63 @@ type btreeIndex[K string | int64] struct {
 	indexName string
 }
 
-func (bti *btreeIndex[K]) getBtreePage(page *storage.Page) btreePageMgr[K] {
+func (bti *btreeIndex[K]) getBtreeInnerPage(page *storage.Page) btreeInnerPage[K] {
 	page.Decode()
-	if page.GetDecodedBasePage().PageType == constants.InnerPageType {
-		innerPage := &btreeInnerPage[K]{
-			btreePage: btreePage[K]{
-				bp:                page.GetDecodedBasePage(),
-				bpMgr:             page,
-				additionalHeaders: make(map[string]int64),
-				keys:              make([]K, 0),
-				values:            make([]*Value, 0),
-				brK:               customBufferReader[K]{8}, // Adjust size based on K type
-			},
-		}
-		innerPage.decode()
-		return innerPage
-	} else if page.GetDecodedBasePage().PageType == constants.LeafPageType {
-		leafPage := &btreeLeafPage[K]{
-			btreePage: btreePage[K]{
-				bp:                page.GetDecodedBasePage(),
-				bpMgr:             page,
-				additionalHeaders: make(map[string]int64),
-				keys:              make([]K, 0),
-				values:            make([]*Value, 0),
-				brK:               customBufferReader[K]{8}, // Adjust size based on K type
-			},
-		}
-		leafPage.decode()
-		return leafPage
+	return btreeInnerPage[K]{
+		btreePage: btreePage[K]{
+			bp:                page.GetDecodedBasePage(),
+			bpMgr:             page,
+			additionalHeaders: make(map[string]int64),
+			keys:              make([]K, 0),
+			values:            make([]*Value, 0),
+			brK:               customBufferReader[K]{8}, // Adjust size based on K type
+		},
 	}
-	return nil
+}
+func (bti *btreeIndex[K]) getBtreeLeafPage(page *storage.Page) btreeLeafPage[K] {
+	page.Decode()
+	return btreeLeafPage[K]{
+		btreePage: btreePage[K]{
+			bp:                page.GetDecodedBasePage(),
+			bpMgr:             page,
+			additionalHeaders: make(map[string]int64),
+			keys:              make([]K, 0),
+			values:            make([]*Value, 0),
+			brK:               customBufferReader[K]{8}, // Adjust size based on K type
+		},
+	}
 }
 
 func (bti *btreeIndex[K]) requestPage(pageId int64) btreePageMgr[K] {
 	page, _ := bti.bufPool.FetchPage(pageId)
-	return bti.getBtreePage(page)
+	if page.GetDecodedBasePage().PageType == constants.InnerPageType {
+		innerpage := bti.getBtreeInnerPage(page)
+		innerpage.decode()
+		return &innerpage
+	} else if page.GetDecodedBasePage().PageType == constants.LeafPageType {
+		leafpage := bti.getBtreeLeafPage(page)
+		leafpage.decode()
+		return &leafpage
+	}
+	return nil
 }
 func (bti *btreeIndex[K]) requestNewPage(pageType int64) btreePageMgr[K] {
 	//panic("Not Implemented requestNewPage")
-	page, _ := bti.bufPool.NewPage()
-	return bti.getBtreePage(page)
-}
-
-func (bti *btreeIndex[K]) resetPageMetaData(page btreePageMgr[K]) {
-	page.setSize(int64(len(page.getPageKeys())))
-
+	page, _ := bti.bufPool.NewPage(pageType)
+	if page.GetDecodedBasePage().PageType == constants.InnerPageType {
+		innerPage := bti.getBtreeInnerPage(page)
+		innerPage.decode()
+		innerPage.additionalHeaders["MaxKV"] = 190
+		innerPage.additionalHeaders["ParentId"] = -1
+		return &innerPage
+	} else if page.GetDecodedBasePage().PageType == constants.LeafPageType {
+		leafPage := bti.getBtreeLeafPage(page)
+		leafPage.decode()
+		leafPage.additionalHeaders["MaxKV"] = 190
+		leafPage.additionalHeaders["ParentId"] = -1
+		return &leafPage
+	}
+	return nil
 }
 
 func (bti *btreeIndex[K]) search(key K) []*Value {
@@ -684,23 +678,19 @@ func (bti *btreeIndex[K]) insertTuple(key K, value *Value, page btreePageMgr[K])
 		innerPageNav := page.(innerPageDataNavigator[K])
 		_, indices, _ := innerPageNav.search(key)
 		if indices[0] == -1 {
-			page.appendKey(key)
-			page.appendValue(value)
+			page.appendKV(key, value)
 		} else {
 			insertIndex := indices[0]
-			page.addKey(insertIndex, key)
-			page.addValue(insertIndex, value)
+			page.addKV(insertIndex, key, value)
 		}
 	} else if page.getPageType() == constants.LeafPageType {
 		leafPageNav := page.(leafPageDataNavigator[K])
 		_, indices, _, _ := leafPageNav.search(key)
 		if indices == nil || indices[0] == -1 {
-			page.appendKey(key)
-			page.appendValue(value)
+			page.appendKV(key, value)
 		}
 		insertIndex := indices[0]
-		page.addKey(insertIndex, key)
-		page.addValue(insertIndex, value)
+		page.addKV(insertIndex, key, value)
 	}
 	if page.getSize() > page.getMaxSize() {
 		bti.iterativeSplit(page)
@@ -714,7 +704,7 @@ func (bti *btreeIndex[K]) iterativeSplit(page btreePageMgr[K]) {
 		newPageId, splitKey = bti.splitInnerPage(page.(btreeInnerPageMgr[K]))
 		// when the inner page is split we need to take care of the change in the parent pointers of the child pages
 	} else if page.getPageType() == constants.LeafPageType {
-		// when the leaf page is split, we need to make sure that the search and prev pointers are set correctly
+		// when the leaf page is split, we need to make sure that the search and prev pointers are s correctly
 		newPageId, splitKey = bti.splitLeafPage(page.(btreeLeafPageMgr[K]))
 	}
 	var parentPage btreePageMgr[K]
@@ -868,8 +858,7 @@ func (bti *btreeIndex[K]) mergeLeaf(mainPage btreeLeafPageMgr[K], sibPage btreeL
 	sibParentValues := sibParent.getPageValues()
 	for i := 0; i < len(sibParentKeys); i++ {
 		if sibParentValues[i].getValuePid() == sibPage.getPageId() {
-			sibParent.deleteKey(int64(i))
-			sibParent.deleteValue(int64(i))
+			sibParent.deleteKV(int64(i))
 		}
 	}
 }
@@ -921,11 +910,11 @@ func (bpage *btreePage[K]) higherBinarySearchKey(key K) (resIndex int64) {
 	return resIndex
 }
 
-func getBtreeIndexMgr[K string | int64]() btreeIndexMgr[K] {
+func getBtreeIndexMgr[K string | int64](dbPath string, logFilePath string) btreeIndexMgr[K] {
 	return &btreeIndex[K]{
 		bufPool: storage.InitBuffPoolMgr(diskmgr.DiskFileInit{
-			DbFilePath:  "dbtest.db",
-			LogFilePath: "dblogtest.log",
+			DbFilePath:  dbPath,
+			LogFilePath: logFilePath,
 		}),
 		indexName: "btree",
 	}
