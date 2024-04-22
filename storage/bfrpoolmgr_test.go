@@ -93,7 +93,7 @@ func TestNewPage(test *testing.T) {
 		LogFilePath: test.TempDir() + "dblog.log",
 	})
 
-	newPage, err := bfrPool.NewPage()
+	newPage, err := bfrPool.NewPage(constants.LeafPageType)
 	if err != nil || newPage.pageData[0] != 1 {
 		test.Errorf("new page creation not working as expected")
 	}
@@ -105,8 +105,8 @@ func TestNewPageMultiple(test *testing.T) {
 		LogFilePath: test.TempDir() + "dblog.log",
 	})
 
-	bfrPool.NewPage()
-	newPage, _ := bfrPool.NewPage()
+	bfrPool.NewPage(constants.LeafPageType)
+	newPage, _ := bfrPool.NewPage(constants.LeafPageType)
 	if newPage.pageData[0] != 1 || bfrPool.diskMgr.GetPageCount() != 2 {
 		test.Errorf("new page multiple creation not working as expected")
 	}
@@ -170,7 +170,7 @@ func TestFetchPage(test *testing.T) {
 		LogFilePath: test.TempDir() + "dblog.log",
 	})
 
-	newPage, _ := bfrPool.NewPage()
+	newPage, _ := bfrPool.NewPage(constants.LeafPageType)
 	fetchedPage, fetchErr := bfrPool.FetchPage(0)
 	if fetchErr != nil || newPage != fetchedPage {
 		test.Errorf("fetch page already in buffer not working as expected")
@@ -183,7 +183,7 @@ func TestFetchPageNotInBuffer(test *testing.T) {
 		LogFilePath: test.TempDir() + "dblog.log",
 	})
 
-	bfrPool.NewPage()
+	bfrPool.NewPage(constants.LeafPageType)
 	delete(bfrPool.pageMap, 0)
 	fetchedPage, fetchErr := bfrPool.FetchPage(0)
 	if fetchErr != nil || fetchedPage.pageData[0] != 1 {

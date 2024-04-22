@@ -33,9 +33,9 @@ type DiskFileInit struct {
 
 type DiskFileMgr interface {
 	init()
-	WritePage(pageId int, writeData []byte) (writeErr error)
-	ReadPage(pageId int, readData []byte) (readErr error)
-	GetPageCount() int
+	WritePage(pageId int64, writeData []byte) (writeErr error)
+	ReadPage(pageId int64, readData []byte) (readErr error)
+	GetPageCount() int64
 }
 
 func GetDiskFileMgr(init DiskFileInit) DiskFileMgr {
@@ -75,11 +75,11 @@ func (dm *DiskFileMetaData) init() {
 }
 
 // WritePage should take byte data for a page id and write at the offset of the pageId.
-func (dm *DiskFileMetaData) WritePage(pageId int, writeData []byte) (writeErr error) {
+func (dm *DiskFileMetaData) WritePage(pageId int64, writeData []byte) (writeErr error) {
 	dm.mux.Lock()
 	defer dm.mux.Unlock()
 
-	if len(writeData) < constants.PageSize {
+	if int64(len(writeData)) < constants.PageSize {
 		return errors.New("write page size less than the actual page size defined")
 	}
 	appendMode := false
@@ -101,7 +101,7 @@ func (dm *DiskFileMetaData) WritePage(pageId int, writeData []byte) (writeErr er
 	return writeErr
 }
 
-func (dm *DiskFileMetaData) ReadPage(pageId int, read []byte) (readErr error) {
+func (dm *DiskFileMetaData) ReadPage(pageId int64, read []byte) (readErr error) {
 	dm.mux.Lock()
 	defer dm.mux.Unlock()
 
@@ -114,14 +114,14 @@ func (dm *DiskFileMetaData) ReadPage(pageId int, read []byte) (readErr error) {
 	if readErr != nil {
 		return readErr
 	}
-	if numRead < constants.PageSize {
+	if int64(numRead) < constants.PageSize {
 		return errors.New("number of bytes read is not equal to the pagesize for pageId:" + fmt.Sprintf("%d", pageId))
 	}
 	return readErr
 }
 
-func (dm *DiskFileMetaData) GetPageCount() (numPages int) {
-	return int((dm.dbFileSize) / int64(constants.PageSize))
+func (dm *DiskFileMetaData) GetPageCount() (numPages int64) {
+	return int64((dm.dbFileSize) / int64(constants.PageSize))
 }
 
 //More Functions to be added here to add data to WAL
